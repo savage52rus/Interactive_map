@@ -1,7 +1,7 @@
 const CONFIG = {
-  MAP_SRC: "assets/map.jpg",
-  ADMIN_LOGIN: "admin",
-  ADMIN_PASS: "fantasy123",
+  MAP_SRC: "assets/result.png",
+  ADMIN_LOGIN: "sailor",
+  ADMIN_PASS: "master",
   MIN_ADMIN_WIDTH: 900,
   STORAGE_KEY: "fantasyMapData_v1",
   AUTOSAVE_KEY: "fantasyMapAutosave_v1",
