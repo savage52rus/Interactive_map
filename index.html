@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Карта Мира</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div id="viewport">
+  <div id="world">
+    <img id="mapImg" alt="Карта мира" />
+    <svg id="measureSvg"></svg>
+    <div id="markersLayer"></div>
+  </div>
+</div>
+
+<div id="topRight">
+  <div class="ui-btn" id="zoomIn" title="Приблизить">+</div>
+  <div class="ui-btn" id="zoomOut" title="Отдалить">−</div>
+  <div class="ui-btn" id="rulerBtn" title="Линейка">📏</div>
+  <div class="ui-btn" id="adminBtn" title="Вход в админ-панель">⚙</div>
+</div>
+
+<div id="bottomLeft">
+  <div class="ui-btn" id="legendBtn" title="Легенда">🗺</div>
+</div>
+
+<div id="legendPanel">
+  <h3>Легенда карты</h3>
+  <div id="legendList"></div>
+</div>
+
+<div id="adminBar">
+  <div class="ab-title">
+    <span>Админ-панель</span>
+    <span class="dirty-dot" title="Есть несохранённые изменения"></span>
+  </div>
+
+  <div class="ab-palette" id="adminPalette"></div>
+
+  <div class="ab-row">
+    <button class="btn" id="modePlaceBtn">➕ Новый</button>
+    <button class="btn" id="modeMoveBtn">✥ Двигать</button>
+  </div>
+  <div class="ab-mode" id="abModeLabel">Режим: <b>просмотр</b></div>
+
+  <div class="ab-sep"></div>
+
+  <div class="ab-row">
+    <button class="btn primary" id="adminSaveBtn" disabled>💾 Сохранить</button>
+  </div>
+  <div class="ab-row">
+    <button class="btn danger" id="adminRevertBtn" disabled>↺ Отменить</button>
+    <button class="btn" id="adminExit">Выйти</button>
+  </div>
+
+  <div class="ab-sep"></div>
+  <div class="ab-section">Резервная копия</div>
+  <div class="ab-row">
+    <button class="btn" id="exportBtn" title="Скачать JSON">⬇ Экспорт</button>
+    <button class="btn" id="importBtn" title="Загрузить JSON">⬆ Импорт</button>
+  </div>
+  <input type="file" id="importFile" accept=".json,application/json" style="display:none" />
+
+  <div class="ab-sep"></div>
+  <div class="ab-section">Автосохранение</div>
+  <div id="autosaveInfo">Автосохранение: <b>—</b></div>
+  <div class="ab-row">
+    <button class="btn" id="autoDownloadBtn" title="Скачать последний автосейв">⬇ Скачать</button>
+    <button class="btn" id="autoRestoreBtn" title="Загрузить последний автосейв в черновик">↻ Восстановить</button>
+  </div>
+
+  <div class="hint" id="abHint">
+    «Новый» — кликните по карте, чтобы поставить маркер. «Двигать» — перетаскивайте маркеры. Изменения сохраняются кнопкой «Сохранить». Импорт попадает в черновик.
+  </div>
+</div>
+
+<div id="modeHint"></div>
+
+<div id="markerPopup">
+  <div class="mp-close" id="mpClose">✕</div>
+  <div class="mp-head">
+    <span id="mpIcon"></span>
+    <div>
+      <div class="mp-title" id="mpTitle"></div>
+      <div class="mp-type" id="mpType"></div>
+    </div>
+  </div>
+  <div class="mp-desc" id="mpDesc"></div>
+</div>
+
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <h2>Вход в админ-панель</h2>
+    <label>Логин</label>
+    <input type="text" id="loginUser" autocomplete="username" />
+    <label>Пароль</label>
+    <input type="password" id="loginPass" autocomplete="current-password" />
+    <div class="err" id="loginErr"></div>
+    <div class="hint">Доступ только с компьютера (ширина экрана &gt; 900px).</div>
+    <div class="modal-actions">
+      <button class="btn" id="loginCancel">Отмена</button>
+      <button class="btn primary" id="loginSubmit">Войти</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="editOverlay">
+  <div class="modal">
+    <h2>Редактирование маркера</h2>
+    <label>Тип объекта</label>
+    <select id="editType"></select>
+    <label>Название</label>
+    <input type="text" id="editName" />
+    <label>Описание</label>
+    <textarea id="editDesc"></textarea>
+    <label>Цвет</label>
+    <input type="color" id="editColor" />
+    <div class="modal-actions">
+      <button class="btn danger" id="editDelete">Удалить</button>
+      <button class="btn" id="editCancel">Отмена</button>
+      <button class="btn primary" id="editSave">Применить</button>
+    </div>
+    <div class="hint">«Применить» вносит изменения в черновик. Не забудьте нажать «💾 Сохранить» в админ-панели.</div>
+  </div>
+</div>
+
+<div class="overlay" id="scaleOverlay">
+  <div class="modal">
+    <h2>Масштаб карты</h2>
+    <div class="hint">Нажмите на карту и поставьте две точки, реальное расстояние между которыми вам известно.</div>
+    <label>Расстояние (дней пути пешком)</label>
+    <input type="number" id="scaleWalk" step="0.1" min="0.1" />
+    <label>Расстояние (дней пути на повозке)</label>
+    <input type="number" id="scaleCart" step="0.1" min="0.1" />
+    <div class="hint" id="scalePickInfo">Точки: не выбраны</div>
+    <div class="modal-actions">
+      <button class="btn" id="scaleCancel">Отмена</button>
+      <button class="btn primary" id="scaleSave" disabled>Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="importOverlay">
+  <div class="modal">
+    <h2>Импорт карты</h2>
+    <div class="hint" id="importInfo">—</div>
+    <div class="err" id="importErr"></div>
+    <div id="importModeBlock" style="display:none; margin-top:12px;">
+      <label>Режим импорта</label>
+      <select id="importMode">
+        <option value="replace">Заменить — полностью заменить текущие данные</option>
+        <option value="merge">Слияние — добавить новые, обновить совпадающие по id</option>
+      </select>
+      <div class="hint" id="importMergeHint">Маркеры с совпадающим id будут обновлены, новые — добавлены, остальные сохранены.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="importCancel">Отмена</button>
+      <button class="btn primary" id="importApply" disabled>Загрузить в черновик</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="autosaveOverlay">
+  <div class="modal">
+    <h2>Восстановить автосохранение</h2>
+    <div class="hint" id="autosaveInfoModal">—</div>
+    <div class="modal-actions">
+      <button class="btn" id="autosaveCancel">Отмена</button>
+      <button class="btn primary" id="autosaveApply">Восстановить в черновик</button>
+    </div>
+  </div>
+</div>
+
+<!-- порядок подключения важен -->
+<script src="js/config.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/types.js"></script>
+<script src="js/state.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/draft.js"></script>
+<script src="js/autosave.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/map-view.js"></script>
+<script src="js/markers.js"></script>
+<script src="js/popup.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/ruler.js"></script>
+<script src="js/scale.js"></script>
+<script src="js/import-export.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/admin.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
