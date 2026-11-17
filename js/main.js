@@ -99,6 +99,7 @@ function init() {
   $("weeksCancel").onclick = cancelWeeks;
   $("weeksInput").addEventListener("keydown", e => { if (e.key === "Enter") confirmWeeks(); });
 
+  ensureContextMenu();
   setupMapEvents();
 
   window.addEventListener("beforeunload", e => {
