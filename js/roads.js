@@ -1,16 +1,9 @@
 /* Дороги (кривые Безье-пути): состояние, отрисовка, редактирование, удаление */
 
-// Черновик текущей отрисовки новой дороги (в мировых координатах)
 let roadDraft = null;
-// { points: [{x,y},...], tempPoint: {x,y}|null }
-
-// Черновик редактирования существующей дороги
 let roadEditing = null;
-// { id, weeks, points, tempPoint }
-
 let roadDragPointIndex = -1;
 let pendingRoad = null;
-// { points, existingId } — данные для окна «Сколько недель пути?»
 
 /* ---------- начало/завершение новой дороги ---------- */
 function startNewRoad() {
@@ -55,7 +48,7 @@ function openWeeksDialog(pointCount, points, existingId) {
   setTimeout(() => $("weeksInput").focus(), 50);
 }
 
-function confirmWeeks() {
+async function confirmWeeks() {
   const raw = $("weeksInput").value.trim();
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0 || Math.floor(n) !== n) {
@@ -66,18 +59,29 @@ function confirmWeeks() {
 
   ensureDraft();
 
+  let target;
   if (pendingRoad.existingId != null) {
-    const r = draft.roads.find(x => x.id === pendingRoad.existingId);
-    if (r) {
-      r.weeks = n;
-      r.points = pendingRoad.points.map(p => ({ x: p.x, y: p.y }));
+    target = draft.roads.find(x => x.id === pendingRoad.existingId);
+    if (target) {
+      target.weeks = n;
+      target.points = pendingRoad.points.map(p => ({ x: p.x, y: p.y }));
     }
   } else {
-    draft.roads.push({
+    target = {
       id: draft.nextRoadId++,
       weeks: n,
       points: pendingRoad.points.map(p => ({ x: p.x, y: p.y }))
-    });
+    };
+    draft.roads.push(target);
+  }
+
+  // синхронизация с сервером
+  if (target) {
+    const res = await apiUpsertRoad(target);
+    if (res.status !== "ok") {
+      alert("Не удалось сохранить дорогу на сервере: " + (res.message || "ошибка"));
+      return;
+    }
   }
 
   roadDraft = null;
@@ -92,9 +96,7 @@ function confirmWeeks() {
 function cancelWeeks() {
   pendingRoad = null;
   $("weeksOverlay").classList.remove("show");
-  // Отмена при создании новой дороги — стираем черновик
   if (roadDraft) { roadDraft = null; drawRoads(); }
-  // Отмена при редактировании — выходим из режима без изменений
   if (roadEditing) {
     roadEditing = null;
     setEditMode("view");
@@ -164,7 +166,6 @@ function drawRoads() {
     p.style.filter = "drop-shadow(0 0 3px #000)";
     g.appendChild(p);
 
-    // подпись с числом недель по центру пути
     try {
       const mid = pathMidpoint(info.path, info.total);
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -179,7 +180,6 @@ function drawRoads() {
       g.appendChild(label);
     } catch (e) { /* ignore */ }
 
-    // в админке — опорные точки и обработчик редактирования
     if (isAdmin && adminMode) {
       r.points.forEach((pt, idx) => {
         const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -275,11 +275,17 @@ function finishEditRoad() {
 }
 
 /* ---------- удаление дороги ---------- */
-function deleteRoad(roadId) {
+async function deleteRoad(roadId) {
   if (!confirm("Удалить эту дорогу? (изменение попадёт в черновик)")) return;
   ensureDraft();
+
+  const res = await apiDeleteRoad(roadId);
+  if (res.status !== "ok") {
+    alert("Не удалось удалить дорогу на сервере: " + (res.message || "ошибка"));
+    return;
+  }
+
   draft.roads = draft.roads.filter(r => r.id !== roadId);
-  // если редактировали эту дорогу — выходим из редактирования
   if (roadEditing && roadEditing.id === roadId) {
     roadEditing = null;
     setEditMode("view");
@@ -314,7 +320,6 @@ function onRoadMouseMove(worldPt) {
   else if (roadEditing) { roadEditing.tempPoint = { x: worldPt.x, y: worldPt.y }; drawRoads(); }
 }
 
-/* ---------- перетаскивание опорных точек ---------- */
 function onRoadPointMouseDown(e, target) {
   const idx = parseInt(target.getAttribute("data-pt-index"), 10);
   if (!Number.isFinite(idx)) return false;
@@ -349,7 +354,6 @@ function onRoadPointMouseUp() {
   roadDragPointIndex = -1;
 }
 
-/* ---------- клавиатура ---------- */
 function onRoadKeyDown(e) {
   if (e.key === "Enter") {
     if (roadDraft) finishNewRoad();
@@ -362,7 +366,7 @@ function onRoadKeyDown(e) {
       roadDraft.points.pop();
       drawRoads();
     }
-  } else if ((e.key === "Delete") && roadEditing) {
+  } else if (e.key === "Delete" && roadEditing) {
     deleteRoad(roadEditing.id);
   }
 }
