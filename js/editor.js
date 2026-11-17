@@ -13,24 +13,50 @@ function openEdit(m) {
 
 function closeEdit() { $("editOverlay").classList.remove("show"); editingId = null; }
 
-function saveEdit() {
+async function saveEdit() {
   ensureDraft();
   const m = draft.markers.find(x => x.id === editingId);
   if (!m) { closeEdit(); return; }
+
+  // считываем форму
   m.type = $("editType").value;
   m.name = $("editName").value.trim() || (TYPES[m.type] ? TYPES[m.type].label : "Без названия");
   m.desc = $("editDesc").value;
   m.color = $("editColor").value;
+
+  // отправляем на сервер
+  const result = await apiUpsertMarker(m);
+  if (result.status !== "ok") {
+    alert("Не удалось сохранить маркер на сервере: " + (result.message || "ошибка"));
+    return;
+  }
+
+  // применяем локально + кэш
+  state.markers = draft.markers;
+  persistState();
   renderMarkers();
-  markDirty();
+  draft = null;
+  clearDirty();
+  scheduleAutosaveSnapshot("save");
   closeEdit();
 }
 
-function deleteEdit() {
-  if (!confirm("Удалить маркер? (изменение попадёт в черновик)")) return;
+async function deleteEdit() {
+  if (!confirm("Удалить маркер?")) return;
   ensureDraft();
+
+  const result = await apiDeleteMarker(editingId);
+  if (result.status !== "ok") {
+    alert("Не удалось удалить маркер на сервере: " + (result.message || "ошибка"));
+    return;
+  }
+
   draft.markers = draft.markers.filter(x => x.id !== editingId);
+  state.markers = draft.markers;
+  persistState();
   renderMarkers();
-  markDirty();
+  draft = null;
+  clearDirty();
+  scheduleAutosaveSnapshot("save");
   closeEdit();
 }
