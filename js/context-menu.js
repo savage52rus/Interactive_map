@@ -1,7 +1,7 @@
 /* Контекстное меню для дорог и маркеров */
 
 let ctxMenuEl = null;
-let ctxMenuTarget = null;   // { kind: "road"|"marker", id }
+let ctxMenuTarget = null;
 
 function ensureContextMenu() {
   if (ctxMenuEl) return ctxMenuEl;
@@ -38,7 +38,6 @@ function showContextMenu(x, y, target) {
   ensureContextMenu();
   ctxMenuTarget = target;
   ctxMenuEl.classList.add("show");
-
   ctxMenuEl.style.left = "0px";
   ctxMenuEl.style.top = "0px";
   const rect = ctxMenuEl.getBoundingClientRect();
@@ -67,14 +66,14 @@ function handleContextAction(action) {
       const r = (draft ? draft : state).roads.find(x => x.id === target.id);
       if (r) openEditRoad(r);
     } else if (action === "delete") {
-      deleteRoad(target.id);
+      deleteRoad(target.id);   // внутри — apiDeleteRoad
     }
   } else if (target.kind === "marker") {
     if (action === "edit") {
       const m = (draft ? draft : state).markers.find(x => x.id === target.id);
       if (m) openEdit(m);
     } else if (action === "delete") {
-      deleteMarkerById(target.id);
+      deleteMarkerById(target.id);  // в markers.js — через apiDeleteMarker
     }
   }
 }
