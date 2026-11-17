@@ -5,6 +5,7 @@ function cloneState() { return JSON.parse(JSON.stringify(state)); }
 function ensureDraft() { if (!draft) draft = cloneState(); return draft; }
 
 function draftMarkers() { return draft ? draft.markers : state.markers; }
+function draftRoads()   { return draft ? draft.roads   : state.roads; }
 function draftScale()   { return draft ? draft.scale   : state.scale; }
 
 function markDirty() { hasUnsaved = true; updateAdminButtons(); }
@@ -20,12 +21,15 @@ function updateAdminButtons() {
 function applyDraft() {
   if (!draft) return;
   state.markers = draft.markers;
+  state.roads = draft.roads;
   state.scale = draft.scale;
   state.nextId = draft.nextId;
+  state.nextRoadId = draft.nextRoadId;
   persistState();
   draft = null;
   clearDirty();
   renderMarkers();
+  drawRoads();
   drawMeasure();
   scheduleAutosaveSnapshot("save");
 }
@@ -36,5 +40,6 @@ function revertDraft() {
   draft = null;
   clearDirty();
   renderMarkers();
+  drawRoads();
   drawMeasure();
 }
