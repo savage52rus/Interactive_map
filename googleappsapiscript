@@ -1,0 +1,199 @@
+// ============================================================
+// НАСТРОЙКИ
+// ============================================================
+const SECRET_TOKEN = "ВАШ_СЕКРЕТНЫЙ_ТОКЕН_ЗАМЕНИТЕ_МЕНЯ";
+const SHEET_MARKERS = "Data";
+const SHEET_ROADS   = "Roads";
+const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color"];
+const HEADERS_ROADS   = ["id", "weeks", "points"];
+
+// ============================================================
+// CORS
+// ============================================================
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  };
+}
+
+function jsonOut(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeaders(corsHeaders());
+}
+
+function doOptions(e) {
+  return jsonOut({ status: 'ok' });
+}
+
+// ============================================================
+// Служебные: получить лист, создать если нет; получить/дописать заголовки
+// ============================================================
+function getOrCreateSheet(name, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+  const firstRow = sheet.getRange(1, 1, 1, Math.max(1, headers.length)).getValues()[0];
+  const isEmpty = firstRow.every(v => v === "" || v === null);
+  if (isEmpty) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sheet;
+}
+
+function sheetToObjects(sheet) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  return data.slice(1)
+    .filter(r => r[0] !== "" && r[0] !== null)
+    .map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = row[i]; });
+      return obj;
+    });
+}
+
+function findRowById(sheet, id) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return -1;
+  const headers = data[0];
+  const idCol = headers.indexOf("id");
+  if (idCol < 0) return -1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(id)) return i + 1; // 1-based
+  }
+  return -1;
+}
+
+// ============================================================
+// GET — отдаём { markers: [...], roads: [...] }
+// Обратная совместимость: если в старом клиенте ожидается массив —
+// параметр ?kind=markers|roads для точечного запроса.
+// ============================================================
+function doGet(e) {
+  try {
+    const kind = e && e.parameter ? e.parameter.kind : null;
+    const markersSheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
+    const roadsSheet   = getOrCreateSheet(SHEET_ROADS,   HEADERS_ROADS);
+
+    const markersRaw = sheetToObjects(markersSheet).map(m => ({
+      id: parseInt(m.id, 10) || 0,
+      type: String(m.type || "poi"),
+      x: Number(m.x) || 0,
+      y: Number(m.y) || 0,
+      name: String(m.name || ""),
+      desc: String(m.desc || ""),
+      color: String(m.color || "#c9a227")
+    }));
+
+    const roadsRaw = sheetToObjects(roadsSheet).map(r => {
+      let pts = [];
+      try { pts = JSON.parse(r.points || "[]"); } catch (e) { pts = []; }
+      if (!Array.isArray(pts)) pts = [];
+      pts = pts
+        .map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        .filter(p => isFinite(p.x) && isFinite(p.y));
+      return {
+        id: parseInt(r.id, 10) || 0,
+        weeks: parseInt(r.weeks, 10) || 1,
+        points: pts
+      };
+    }).filter(r => r.points.length >= 2);
+
+    if (kind === "markers") return jsonOut(markersRaw);
+    if (kind === "roads")   return jsonOut(roadsRaw);
+
+    return jsonOut({ markers: markersRaw, roads: roadsRaw });
+  } catch (err) {
+    return jsonOut({ error: err.toString() });
+  }
+}
+
+// ============================================================
+// POST — единый обработчик для маркеров и дорог
+// payload = { token, kind: "marker"|"road", action: "upsert"|"delete", item | id }
+// Обратная совместимость со старым форматом:
+//   { token, action: "upsert", marker }  → kind=marker
+//   { token, action: "delete", id }      → kind=marker
+// ============================================================
+function doPost(e) {
+  try {
+    const payload = JSON.parse(e.postData.contents);
+    if (payload.token !== SECRET_TOKEN) throw new Error("Неверный токен доступа.");
+
+    const kind = payload.kind || (payload.marker ? "marker" : "marker");
+
+    if (kind === "marker") return handleMarkerPost(payload);
+    if (kind === "road")   return handleRoadPost(payload);
+
+    throw new Error("Неизвестный тип: " + kind);
+  } catch (err) {
+    return jsonOut({ status: 'error', message: err.toString() });
+  }
+}
+
+function handleMarkerPost(payload) {
+  const sheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
+  const headers = sheet.getRange(1, 1, 1, HEADERS_MARKERS.length).getValues()[0];
+
+  if (payload.action === "upsert") {
+    const m = payload.marker || payload.item || {};
+    const row = headers.map(h => (m[h] !== undefined ? m[h] : ""));
+    const foundRow = findRowById(sheet, m.id);
+    if (foundRow > 0) {
+      sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
+      return jsonOut({ status: 'ok', kind: 'marker', action: 'updated', id: m.id });
+    }
+    sheet.appendRow(row);
+    return jsonOut({ status: 'ok', kind: 'marker', action: 'created', id: m.id });
+  }
+
+  if (payload.action === "delete") {
+    const foundRow = findRowById(sheet, payload.id);
+    if (foundRow > 0) {
+      sheet.deleteRow(foundRow);
+      return jsonOut({ status: 'ok', kind: 'marker', action: 'deleted', id: payload.id });
+    }
+    return jsonOut({ status: 'error', message: 'Маркер с таким id не найден.' });
+  }
+
+  throw new Error("Неизвестное действие для маркера: " + payload.action);
+}
+
+function handleRoadPost(payload) {
+  const sheet = getOrCreateSheet(SHEET_ROADS, HEADERS_ROADS);
+  const headers = sheet.getRange(1, 1, 1, HEADERS_ROADS.length).getValues()[0];
+
+  if (payload.action === "upsert") {
+    const r = payload.road || payload.item || {};
+    const pointsStr = JSON.stringify(r.points || []);
+    const row = headers.map(h => {
+      if (h === "points") return pointsStr;
+      return r[h] !== undefined ? r[h] : "";
+    });
+    const foundRow = findRowById(sheet, r.id);
+    if (foundRow > 0) {
+      sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
+      return jsonOut({ status: 'ok', kind: 'road', action: 'updated', id: r.id });
+    }
+    sheet.appendRow(row);
+    return jsonOut({ status: 'ok', kind: 'road', action: 'created', id: r.id });
+  }
+
+  if (payload.action === "delete") {
+    const foundRow = findRowById(sheet, payload.id);
+    if (foundRow > 0) {
+      sheet.deleteRow(foundRow);
+      return jsonOut({ status: 'ok', kind: 'road', action: 'deleted', id: payload.id });
+    }
+    return jsonOut({ status: 'error', message: 'Дорога с таким id не найдена.' });
+  }
+
+  throw new Error("Неизвестное действие для дороги: " + payload.action);
+}
