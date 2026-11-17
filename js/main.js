@@ -13,10 +13,14 @@ function init() {
     imgSize.h = mapImg.naturalHeight;
     $("measureSvg").setAttribute("width", imgSize.w);
     $("measureSvg").setAttribute("height", imgSize.h);
+    $("roadsSvg").setAttribute("width", imgSize.w);
+    $("roadsSvg").setAttribute("height", imgSize.h);
+    $("roadsSvg").setAttribute("viewBox", `0 0 ${imgSize.w} ${imgSize.h}`);
     $("world").style.width = imgSize.w + "px";
     $("world").style.height = imgSize.h + "px";
     fitMap();
     renderMarkers();
+    drawRoads();
   };
   mapImg.onerror = () => {
     const c = document.createElement("canvas");
@@ -56,6 +60,13 @@ function init() {
   $("adminRevertBtn").onclick = revertDraft;
   $("modePlaceBtn").onclick = () => setEditMode("place");
   $("modeMoveBtn").onclick = () => setEditMode("move");
+  $("modeRoadBtn").onclick = () => {
+    if (roadDraft || roadEditing) {
+      roadDraft = null; roadEditing = null; setEditMode("view"); drawRoads();
+    } else {
+      startNewRoad();
+    }
+  };
 
   $("editCancel").onclick = closeEdit;
   $("editSave").onclick = saveEdit;
@@ -83,6 +94,10 @@ function init() {
   $("autoRestoreBtn").onclick = openRestoreAutosave;
   $("autosaveCancel").onclick = () => { $("autosaveOverlay").classList.remove("show"); pendingAutosave = null; };
   $("autosaveApply").onclick = applyRestoreAutosave;
+
+  $("weeksConfirm").onclick = confirmWeeks;
+  $("weeksCancel").onclick = cancelWeeks;
+  $("weeksInput").addEventListener("keydown", e => { if (e.key === "Enter") confirmWeeks(); });
 
   setupMapEvents();
 
