@@ -10,19 +10,35 @@ function setEditMode(mode) {
     placingType = null;
     $("adminPalette").querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
     setHint("Перетаскивайте маркеры мышью или пальцем");
+  } else if (mode === "road") {
+    viewport.classList.remove("move-mode");
+    placingType = null;
+    $("adminPalette").querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
+    if (!roadDraft && !roadEditing) {
+      setHint("Кликните по карте, чтобы добавить точку дороги. Двойной клик / Enter — завершить.");
+    }
   } else {
     viewport.classList.remove("move-mode");
     placingType = null;
     $("adminPalette").querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
     setHint("");
+    if (typeof roadDraft !== "undefined") roadDraft = null;
+    if (typeof roadEditing !== "undefined") roadEditing = null;
+    if (typeof drawRoads === "function") drawRoads();
   }
   $("modePlaceBtn").classList.toggle("mode-on", mode === "place");
   $("modeMoveBtn").classList.toggle("mode-on", mode === "move");
+  const rb = $("modeRoadBtn");
+  if (rb) rb.classList.toggle("mode-on", mode === "road");
   updateModeLabel();
 }
 
 function updateModeLabel() {
-  const name = editMode === "place" ? "размещение" : editMode === "move" ? "перетаскивание" : "просмотр";
+  const name =
+    editMode === "place" ? "размещение" :
+    editMode === "move"  ? "перетаскивание" :
+    editMode === "road"  ? "дорога" :
+    "просмотр";
   $("abModeLabel").innerHTML = "Режим: <b>" + name + "</b>";
 }
 
@@ -36,7 +52,9 @@ function toggleAdminMode() {
     if (hasUnsaved && !confirm("Есть несохранённые изменения. Выйти без сохранения?")) {
       adminMode = true; $("adminBar").classList.add("show"); return;
     }
-    draft = null; clearDirty(); renderMarkers();
+    draft = null; clearDirty(); renderMarkers(); drawRoads();
+  } else {
+    drawRoads();
   }
 }
 
@@ -47,4 +65,5 @@ function exitAdmin() {
   $("adminBar").classList.remove("show");
   setEditMode("view");
   renderMarkers();
+  drawRoads();
 }
