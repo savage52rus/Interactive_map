@@ -34,10 +34,34 @@ function setupMapEvents() {
   let dragMarker = null, dragId = null, dragOffset = { x: 0, y: 0 };
 
   viewport.addEventListener("mousedown", e => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 && e.button !== 2) return;
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
         e.target.closest(".overlay")) return;
+
+    // ПКМ по дороге в админке — удаление
+    if (e.button === 2 && isAdmin && adminMode) {
+      const roadPath = e.target.closest("path[stroke-dasharray]");
+      const roadGroup = e.target.closest("g[data-road-id]");
+      const roadIdAttr = roadGroup && roadGroup.getAttribute("data-road-id");
+      if (roadIdAttr != null) {
+        e.preventDefault();
+        deleteRoad(parseInt(roadIdAttr, 10));
+        return;
+      }
+      return;
+    }
+
+    // опорная точка дороги
+    if (isAdmin && adminMode && editMode === "road") {
+      const ptEl = e.target.closest("circle[data-pt-index]");
+      if (ptEl) {
+        if (onRoadPointMouseDown(e, ptEl)) {
+          window.__roadSuppressClick = true;
+          return;
+        }
+      }
+    }
 
     const markerEl = e.target.closest(".marker");
     if (editMode === "move" && markerEl) {
@@ -52,12 +76,19 @@ function setupMapEvents() {
         return;
       }
     }
+    if (e.button !== 0) return;
     panning = true; movedByPan = false;
     lastX = e.clientX; lastY = e.clientY;
     viewport.classList.add("dragging");
   });
 
   window.addEventListener("mousemove", e => {
+    if (isAdmin && adminMode && editMode === "road") {
+      const w = screenToWorld(e.clientX, e.clientY);
+      onRoadPointMouseMove(w);
+      onRoadMouseMove(w);
+      return;
+    }
     if (dragMarker && dragId != null) {
       const w = screenToWorld(e.clientX, e.clientY);
       const m = draftMarkers().find(x => x.id === dragId);
@@ -78,6 +109,7 @@ function setupMapEvents() {
   });
 
   window.addEventListener("mouseup", () => {
+    if (isAdmin && adminMode && editMode === "road") onRoadPointMouseUp();
     if (dragMarker && dragId != null) {
       dragMarker.classList.remove("dragging");
       dragMarker = null; dragId = null;
@@ -88,11 +120,28 @@ function setupMapEvents() {
   });
 
   viewport.addEventListener("click", e => {
+    if (window.__roadSuppressClick) { window.__roadSuppressClick = false; return; }
     if (movedByPan) { movedByPan = false; return; }
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
         e.target.closest(".overlay")) return;
     handleMapClick(e.clientX, e.clientY);
+  });
+
+  viewport.addEventListener("dblclick", e => {
+    if (!(isAdmin && adminMode && editMode === "road")) return;
+    if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
+        e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
+        e.target.closest(".overlay")) return;
+    const p = screenToWorld(e.clientX, e.clientY);
+    onRoadMapClick(p, true);
+  });
+
+  viewport.addEventListener("contextmenu", e => {
+    if (isAdmin && adminMode) {
+      const roadGroup = e.target.closest("g[data-road-id]");
+      if (roadGroup) e.preventDefault();
+    }
   });
 
   viewport.addEventListener("wheel", e => {
@@ -105,6 +154,12 @@ function setupMapEvents() {
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
         e.target.closest(".overlay")) return;
+    if (isAdmin && adminMode && editMode === "road") {
+      const ptEl = e.target.closest("circle[data-pt-index]");
+      if (ptEl && e.touches.length === 1) {
+        if (onRoadPointMouseDown(e, ptEl)) return;
+      }
+    }
     const markerEl = e.target.closest(".marker");
     if (editMode === "move" && markerEl && e.touches.length === 1) {
       const id = parseInt(markerEl.dataset.id, 10);
@@ -129,6 +184,14 @@ function setupMapEvents() {
   }, { passive: false });
 
   viewport.addEventListener("touchmove", e => {
+    if (isAdmin && adminMode && editMode === "road" && e.touches.length === 1) {
+      const t = e.touches[0];
+      const w = screenToWorld(t.clientX, t.clientY);
+      onRoadPointMouseMove(w);
+      onRoadMouseMove(w);
+      e.preventDefault();
+      return;
+    }
     if (dragMarker && dragId != null && e.touches.length === 1) {
       const t = e.touches[0];
       const w = screenToWorld(t.clientX, t.clientY);
@@ -157,12 +220,19 @@ function setupMapEvents() {
   }, { passive: false });
 
   viewport.addEventListener("touchend", () => {
+    if (isAdmin && adminMode && editMode === "road") onRoadPointMouseUp();
     if (dragMarker && dragId != null) {
       dragMarker.classList.remove("dragging");
       dragMarker = null; dragId = null;
       ensureDraft(); markDirty(); return;
     }
     panning = false; touchDist = 0;
+  });
+
+  window.addEventListener("keydown", e => {
+    if (!(isAdmin && adminMode && editMode === "road")) return;
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    onRoadKeyDown(e);
   });
 
   function touchDistance(t) {
@@ -186,6 +256,11 @@ function handleMapClick(cx, cy) {
     measurePoints.push(p);
     if (measurePoints.length > 2) measurePoints = measurePoints.slice(-2);
     drawMeasure();
+    return;
+  }
+  if (isAdmin && adminMode && editMode === "road") {
+    const p = screenToWorld(cx, cy);
+    onRoadMapClick(p, false);
     return;
   }
   if (isAdmin && adminMode && editMode === "place" && placingType) {
