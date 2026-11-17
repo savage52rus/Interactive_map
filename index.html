@@ -12,6 +12,7 @@
   <div id="world">
     <img id="mapImg" alt="Карта мира" />
     <svg id="measureSvg"></svg>
+    <svg id="roadsSvg"></svg>
     <div id="markersLayer"></div>
   </div>
 </div>
@@ -43,6 +44,7 @@
   <div class="ab-row">
     <button class="btn" id="modePlaceBtn">➕ Новый</button>
     <button class="btn" id="modeMoveBtn">✥ Двигать</button>
+    <button class="btn" id="modeRoadBtn">〰 Дорога</button>
   </div>
   <div class="ab-mode" id="abModeLabel">Режим: <b>просмотр</b></div>
 
@@ -73,7 +75,7 @@
   </div>
 
   <div class="hint" id="abHint">
-    «Новый» — кликните по карте, чтобы поставить маркер. «Двигать» — перетаскивайте маркеры. Изменения сохраняются кнопкой «Сохранить». Импорт попадает в черновик.
+    «Новый» — кликните по карте, чтобы поставить маркер. «Двигать» — перетаскивайте маркеры. «Дорога» — рисуйте путь по точкам, задайте число недель. Изменения сохраняются кнопкой «Сохранить».
   </div>
 </div>
 
@@ -99,7 +101,7 @@
     <label>Пароль</label>
     <input type="password" id="loginPass" autocomplete="current-password" />
     <div class="err" id="loginErr"></div>
-    <div class="hint">Доступ только с компьютера.</div>
+    <div class="hint">Доступ только с компьютера (ширина экрана &gt; 900px).</div>
     <div class="modal-actions">
       <button class="btn" id="loginCancel">Отмена</button>
       <button class="btn primary" id="loginSubmit">Войти</button>
@@ -174,7 +176,21 @@
   </div>
 </div>
 
-<!-- порядок подключения важен -->
+<div class="overlay" id="weeksOverlay">
+  <div class="modal">
+    <h2>Сколько недель пути?</h2>
+    <div class="hint" id="weeksInfo">—</div>
+    <label>Количество недель (целое число)</label>
+    <input type="number" id="weeksInput" min="1" step="1" placeholder="например, 3" />
+    <div class="err" id="weeksErr"></div>
+    <div class="modal-actions">
+      <button class="btn" id="weeksCancel">Отмена</button>
+      <button class="btn primary" id="weeksConfirm">Подтвердить</button>
+    </div>
+    <div class="hint">Количество штрихов пунктира будет равно числу недель.</div>
+  </div>
+</div>
+
 <script src="js/config.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/types.js"></script>
@@ -187,6 +203,7 @@
 <script src="js/markers.js"></script>
 <script src="js/popup.js"></script>
 <script src="js/editor.js"></script>
+<script src="js/roads.js"></script>
 <script src="js/ruler.js"></script>
 <script src="js/scale.js"></script>
 <script src="js/import-export.js"></script>
