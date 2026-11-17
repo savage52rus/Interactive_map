@@ -5,8 +5,10 @@ function loadState() {
       const d = JSON.parse(raw);
       if (d && Array.isArray(d.markers)) {
         state.markers = d.markers;
+        state.curves = Array.isArray(d.curves) ? d.curves : [];
         state.scale = d.scale || state.scale;
         state.nextId = d.nextId || (Math.max(0, ...state.markers.map(m => m.id)) + 1);
+        state.nextCurveId = d.nextCurveId || (Math.max(0, ...state.curves.map(c => c.id)) + 1);
       }
     }
   } catch (e) { console.warn("loadState", e); }
