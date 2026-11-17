@@ -8,7 +8,9 @@ function exportJSON() {
     exportedAt: new Date().toISOString(),
     scale: src.scale,
     nextId: src.nextId,
-    markers: src.markers
+    nextRoadId: src.nextRoadId,
+    markers: src.markers,
+    roads: src.roads
   };
   downloadBlob(JSON.stringify(payload, null, 2),
     `fantasy-map-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`);
@@ -62,9 +64,9 @@ function renderImportPreview(fileName) {
   const addCount = pendingImport.markers.length - updCount;
 
   $("importInfo").innerHTML = `Файл: <b>${escapeHtml(fileName)}</b><br>
-    Маркеров в файле: <b>${pendingImport.markers.length}</b><br>
+    Маркеров в файле: <b>${pendingImport.markers.length}</b>, дорог: <b>${pendingImport.roads.length}</b><br>
     Масштаб: ${pendingImport.scale.refPx ? "задан" : "не задан"}<br>
-    <span class="hint">Сейчас на карте: ${cur.markers.length} марк. (совпадений по id: ${updCount}, новых: ${addCount})</span>`;
+    <span class="hint">Сейчас на карте: ${cur.markers.length} марк., ${cur.roads.length} дорог (совпадений по id: ${updCount}, новых маркеров: ${addCount})</span>`;
   $("importErr").textContent = "";
   $("importModeBlock").style.display = "block";
   $("importApply").disabled = false;
@@ -98,14 +100,30 @@ function validateImport(data) {
     });
   }
 
+  const cleanRoads = [];
+  if (Array.isArray(data.roads)) {
+    for (const r of data.roads) {
+      if (!r || typeof r !== "object") continue;
+      if (!Array.isArray(r.points) || r.points.length < 2) continue;
+      const pts = r.points
+        .map(p => ({ x: Number(p.x), y: Number(p.y) }))
+        .filter(p => isFinite(p.x) && isFinite(p.y));
+      if (pts.length < 2) continue;
+      const id = Number.isFinite(Number(r.id)) && Number(r.id) > 0 ? Math.floor(Number(r.id)) : null;
+      const weeks = Number.isFinite(Number(r.weeks)) && Number(r.weeks) > 0 ? Math.floor(Number(r.weeks)) : 1;
+      cleanRoads.push({ id, weeks, points: pts });
+    }
+  }
+
   let scale = { walk: CONFIG.DEFAULT_WALK, cart: CONFIG.DEFAULT_CART };
   if (data.scale && typeof data.scale === "object") {
-    const w = Number(data.scale.walk), c = Number(data.scale.cart), r = Number(data.scale.refPx);
+    const w = Number(data.scale.walk), c = Number(data.scale.cart), rr = Number(data.scale.refPx);
     if (isFinite(w) && w > 0) scale.walk = w;
     if (isFinite(c) && c > 0) scale.cart = c;
-    if (isFinite(r) && r > 0) scale.refPx = r;
+    if (isFinite(rr) && rr > 0) scale.refPx = rr;
   }
-  return { ok: true, clean: { markers: cleanMarkers, scale } };
+
+  return { ok: true, clean: { markers: cleanMarkers, scale, roads: cleanRoads } };
 }
 
 function applyImport() {
@@ -121,6 +139,15 @@ function applyImport() {
       return { ...m, id };
     });
     draft.nextId = next;
+
+    const usedR = new Set(); let nextR = 1;
+    draft.roads = pendingImport.roads.map(r => {
+      while (usedR.has(nextR)) nextR++;
+      const id = nextR++; usedR.add(id);
+      return { ...r, id };
+    });
+    draft.nextRoadId = nextR;
+
     draft.scale = { ...pendingImport.scale };
   } else {
     const byId = new Map(draft.markers.map(m => [m.id, m]));
@@ -139,10 +166,31 @@ function applyImport() {
       }
     });
     draft.nextId = maxId;
+
+    const byIdR = new Map(draft.roads.map(r => [r.id, r]));
+    let maxR = draft.nextRoadId || 1;
+    pendingImport.roads.forEach(r => {
+      let id = r.id;
+      if (id == null || id <= 0 || !Number.isFinite(id)) id = maxR++;
+      else if (!byIdR.has(id) && id >= maxR) maxR = id + 1;
+      const existing = byIdR.get(id);
+      if (existing) {
+        existing.weeks = r.weeks; existing.points = r.points;
+      } else {
+        const nr = { ...r, id };
+        draft.roads.push(nr); byIdR.set(id, nr);
+      }
+    });
+    draft.nextRoadId = maxR;
+
     if (pendingImport.scale.refPx) draft.scale = { ...pendingImport.scale };
   }
 
-  renderMarkers(); drawMeasure(); markDirty(); closeImport();
+  renderMarkers();
+  drawRoads();
+  drawMeasure();
+  markDirty();
+  closeImport();
   setHint(`Импорт (${mode === "replace" ? "замена" : "слияние"}) загружен в черновик. Нажмите «💾 Сохранить».`);
   setTimeout(() => setHint(""), 3000);
 }
