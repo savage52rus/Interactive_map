@@ -1,14 +1,17 @@
 const CONFIG = {
-  MAP_SRC: "assets/result.png",
+  MAP_SRC: "assets/map.jpg",
   ADMIN_LOGIN: "admin",
   ADMIN_PASS: "fantasy123",
   MIN_ADMIN_WIDTH: 900,
 
-  // Включение/выключение линейки без удаления кода.
-  // false — кнопка 📏 скрыта, режимы линейки принудительно выключены,
-  //         но state.scale, draftScale, saveScale и drawMeasure продолжают работать.
-  // true  — линейка возвращается как была.
+  // Линейка (см. прошлый шаг)
   RULER_ENABLED: false,
+
+  // === Синхронизация через Google Sheets ===
+  // URL веб-приложения Apps Script (из "Развернуть → Новое развёртывание")
+  API_URL: "https://script.google.com/macros/s/ВАШ_ID/exec",
+  // Тот же токен, что в Apps Script
+  SECRET_TOKEN: "ВАШ_СЕКРЕТНЫЙ_ТОКЕН_ЗАМЕНИТЕ_МЕНЯ",
 
   STORAGE_KEY: "fantasyMapData_v1",
   AUTOSAVE_KEY: "fantasyMapAutosave_v1",
