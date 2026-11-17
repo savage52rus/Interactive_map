@@ -38,3 +38,19 @@ function revertDraft() {
   renderMarkers();
   drawMeasure();
 }
+
+function applyDraft() {
+  if (!draft) return;
+  state.markers = draft.markers;
+  state.curves = draft.curves;
+  state.nextId = draft.nextId;
+  state.nextCurveId = draft.nextCurveId;
+  state.scale = draft.scale;
+  persistState();
+  draft = null;
+  clearDirty();
+  renderMarkers();
+  drawCurves();       // ← новое
+  drawMeasure();
+  scheduleAutosaveSnapshot("save");
+}
