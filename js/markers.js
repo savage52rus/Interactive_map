@@ -13,6 +13,18 @@ function renderMarkers() {
       if (isAdmin && adminMode) openEdit(m);
       else showPopup(m);
     });
+    el.addEventListener("contextmenu", e => {
+      if (!(isAdmin && adminMode)) return;
+      openContextMenuAt(e, { kind: "marker", id: m.id });
+    });
     layer.appendChild(el);
   });
+}
+
+function deleteMarkerById(id) {
+  if (!confirm("Удалить маркер? (изменение попадёт в черновик)")) return;
+  ensureDraft();
+  draft.markers = draft.markers.filter(x => x.id !== id);
+  renderMarkers();
+  markDirty();
 }
