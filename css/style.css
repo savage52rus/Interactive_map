@@ -12,6 +12,17 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #mapImg { display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 
+/* слой дорог: события только на интерактивных элементах */
+#roadsSvg {
+  position: absolute; top: 0; left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+#roadsSvg circle,
+#roadsSvg g[data-road-id] path {
+  pointer-events: auto;
+}
+
 .marker {
   position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -104,7 +115,7 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #adminBar {
   position: fixed; top: 14px; left: 14px; z-index: 30;
   background: var(--panel); border: 1px solid var(--gold); border-radius: 12px;
-  padding: 10px; display: none; flex-direction: column; gap: 8px; max-width: 280px;
+  padding: 10px; display: none; flex-direction: column; gap: 8px; max-width: 300px;
   box-shadow: 0 10px 40px rgba(0,0,0,.7);
   max-height: calc(100vh - 28px); overflow-y: auto;
 }
