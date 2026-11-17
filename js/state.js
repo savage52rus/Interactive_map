@@ -1,8 +1,10 @@
 // Основное (сохранённое) состояние — доступно всем, меняется только через applyDraft
 const state = {
   markers: [],
+  roads: [],                                      // ← дороги (кривые Безье)
   scale: { walk: CONFIG.DEFAULT_WALK, cart: CONFIG.DEFAULT_CART },
-  nextId: 1
+  nextId: 1,
+  nextRoadId: 1                                   // ← счётчик id дорог
 };
 
 // Вид камеры
@@ -12,7 +14,7 @@ const imgSize = { w: 0, h: 0 };
 // Флаги админа
 let isAdmin = false;
 let adminMode = false;
-let editMode = "view";       // "view" | "place" | "move"
+let editMode = "view";       // "view" | "place" | "move" | "road"
 let placingType = null;
 
 // Линейка
