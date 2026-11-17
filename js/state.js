@@ -21,5 +21,14 @@ let measurePoints = [];
 let scalePickMode = false;
 let scalePickPts = [];
 
+// Кривые
+const state = {
+  markers: [],
+  curves: [],                                     // ← новое
+  scale: { walk: CONFIG.DEFAULT_WALK, cart: CONFIG.DEFAULT_CART },
+  nextId: 1,
+  nextCurveId: 1                                  // ← новое
+};
+
 // Временные
 let pendingAutosave = null;
