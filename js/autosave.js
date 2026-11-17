@@ -22,8 +22,11 @@ function makeSnapshot(reason) {
     reason: reason || "auto",
     scale: JSON.parse(JSON.stringify(src.scale)),
     nextId: src.nextId,
+    nextRoadId: src.nextRoadId,
     markers: JSON.parse(JSON.stringify(src.markers)),
-    markerCount: src.markers.length
+    roads: JSON.parse(JSON.stringify(src.roads || [])),
+    markerCount: src.markers.length,
+    roadCount: (src.roads || []).length
   };
 }
 
@@ -49,7 +52,7 @@ function updateAutosaveUI() {
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
-  el.innerHTML = `Автосохранение: <b>${hh}:${mm}:${ss}</b> (${list[0].markerCount} марк.)`;
+  el.innerHTML = `Автосохранение: <b>${hh}:${mm}:${ss}</b> (${list[0].markerCount} марк., ${list[0].roadCount || 0} дорог)`;
 }
 
 function downloadAutosave() {
@@ -64,7 +67,9 @@ function downloadAutosave() {
     reason: snap.reason,
     scale: snap.scale,
     nextId: snap.nextId,
-    markers: snap.markers
+    nextRoadId: snap.nextRoadId,
+    markers: snap.markers,
+    roads: snap.roads || []
   };
   downloadBlob(JSON.stringify(payload, null, 2),
     `fantasy-map-autosave-${snap.at.slice(0, 19).replace(/[:T]/g, "-")}.json`);
@@ -76,7 +81,7 @@ function openRestoreAutosave() {
   const snap = list[0];
   const pretty = new Date(snap.at).toLocaleString("ru-RU");
   $("autosaveInfoModal").innerHTML = `Последний снимок: <b>${pretty}</b><br>
-    Маркеров: <b>${snap.markerCount}</b><br>
+    Маркеров: <b>${snap.markerCount}</b>, дорог: <b>${snap.roadCount || 0}</b><br>
     <span class="hint">Данные будут загружены в <b>черновик</b>. Их можно проверить и нажать «💾 Сохранить».</span>`;
   pendingAutosave = snap;
   $("autosaveOverlay").classList.add("show");
@@ -86,9 +91,12 @@ function applyRestoreAutosave() {
   if (!pendingAutosave) return;
   ensureDraft();
   draft.markers = JSON.parse(JSON.stringify(pendingAutosave.markers));
+  draft.roads = JSON.parse(JSON.stringify(pendingAutosave.roads || []));
   draft.scale = JSON.parse(JSON.stringify(pendingAutosave.scale));
   draft.nextId = pendingAutosave.nextId || (Math.max(0, ...draft.markers.map(m => m.id)) + 1);
+  draft.nextRoadId = pendingAutosave.nextRoadId || (Math.max(0, ...draft.roads.map(r => r.id)) + 1);
   renderMarkers();
+  drawRoads();
   drawMeasure();
   markDirty();
   $("autosaveOverlay").classList.remove("show");
