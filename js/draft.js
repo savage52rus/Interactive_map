@@ -20,17 +20,25 @@ function updateAdminButtons() {
 
 async function applyDraft() {
   if (!draft) return;
-  // Отправляем на сервер все маркеры, которых коснулись изменения,
-  // проще: отправляем все маркеры по одному (для небольшой карты это ок).
-  // На больших картах лучше отправлять только изменённые.
-  let ok = true;
+
+  // отправляем на сервер все маркеры черновика (upsert)
+  let okMarkers = true;
   for (const m of draft.markers) {
     const res = await apiUpsertMarker(m);
-    if (res.status !== "ok") { ok = false; console.error("upsert failed:", m, res); }
+    if (res.status !== "ok") { okMarkers = false; console.error("marker upsert failed:", m, res); }
   }
-  if (!ok) {
-    if (!confirm("Не все маркеры удалось отправить на сервер. Применить локально?")) return;
+
+  // отправляем на сервер все дороги черновика (upsert)
+  let okRoads = true;
+  for (const r of draft.roads) {
+    const res = await apiUpsertRoad(r);
+    if (res.status !== "ok") { okRoads = false; console.error("road upsert failed:", r, res); }
   }
+
+  if (!okMarkers || !okRoads) {
+    if (!confirm("Не все данные удалось отправить на сервер. Применить локально?")) return;
+  }
+
   state.markers = draft.markers;
   state.roads = draft.roads;
   state.scale = draft.scale;
