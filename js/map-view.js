@@ -94,6 +94,15 @@ function setupMapEvents() {
         e.target.closest(".overlay")) return;
     handleMapClick(e.clientX, e.clientY);
   });
+  
+  viewport.addEventListener("dblclick", e => {
+    if (!(isAdmin && adminMode && editMode === "curve")) return;
+    if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
+        e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
+        e.target.closest(".overlay")) return;
+    const p = screenToWorld(e.clientX, e.clientY);
+    onCurveMapClick(p, true);
+  });
 
   viewport.addEventListener("wheel", e => {
     e.preventDefault();
@@ -186,6 +195,11 @@ function handleMapClick(cx, cy) {
     measurePoints.push(p);
     if (measurePoints.length > 2) measurePoints = measurePoints.slice(-2);
     drawMeasure();
+    return;
+  }
+  if (isAdmin && adminMode && editMode === "curve") {
+    const p = screenToWorld(cx, cy);
+    onCurveMapClick(p, false);
     return;
   }
   if (isAdmin && adminMode && editMode === "place" && placingType) {
