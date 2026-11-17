@@ -18,8 +18,19 @@ function updateAdminButtons() {
   $("adminRevertBtn").disabled = !hasUnsaved;
 }
 
-function applyDraft() {
+async function applyDraft() {
   if (!draft) return;
+  // Отправляем на сервер все маркеры, которых коснулись изменения,
+  // проще: отправляем все маркеры по одному (для небольшой карты это ок).
+  // На больших картах лучше отправлять только изменённые.
+  let ok = true;
+  for (const m of draft.markers) {
+    const res = await apiUpsertMarker(m);
+    if (res.status !== "ok") { ok = false; console.error("upsert failed:", m, res); }
+  }
+  if (!ok) {
+    if (!confirm("Не все маркеры удалось отправить на сервер. Применить локально?")) return;
+  }
   state.markers = draft.markers;
   state.roads = draft.roads;
   state.scale = draft.scale;
