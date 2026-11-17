@@ -1,11 +1,34 @@
-function init() {
-  loadState();
+async function init() {
   buildLegend();
   buildAdminPalette();
   updateAdminButtons();
   updateModeLabel();
   updateAutosaveUI();
   startAutosaveTimer();
+
+  // === Загрузка данных с сервера (единый источник правды) ===
+  // localStorage оставляем как кэш для показа, если сервер недоступен
+  const cached = (() => {
+    try { return JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || "null"); }
+    catch { return null; }
+  })();
+  if (cached && Array.isArray(cached.markers)) {
+    state.markers = cached.markers;
+    state.roads = Array.isArray(cached.roads) ? cached.roads : [];
+    state.scale = cached.scale || state.scale;
+    state.nextId = cached.nextId || 1;
+    state.nextRoadId = cached.nextRoadId || 1;
+  }
+
+  const remote = await apiFetchAll();
+  if (remote) {
+    state.markers = remote;
+    state.nextId = Math.max(0, ...remote.map(m => m.id || 0)) + 1;
+    persistState(); // обновим кэш
+  } else {
+    setHint("Сервер недоступен — показаны локально сохранённые данные");
+    setTimeout(() => setHint(""), 3500);
+  }
 
   const mapImg = $("mapImg");
   mapImg.onload = () => {
@@ -43,13 +66,12 @@ function init() {
   $("zoomOut").onclick = () => zoomAt(1 / 1.3);
   $("legendBtn").onclick = () => $("legendPanel").classList.toggle("show");
 
-  // Линейка отключается флагом CONFIG.RULER_ENABLED без удаления кода
+  // Линейка
   if (CONFIG.RULER_ENABLED) {
     $("rulerBtn").onclick = toggleRuler;
   } else {
     const rb = $("rulerBtn");
     if (rb) rb.style.display = "none";
-    // гарантированно выключаем режимы линейки/выбора масштаба через клики по карте
     rulerMode = false;
     scalePickMode = false;
     measurePoints = [];
