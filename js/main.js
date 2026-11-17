@@ -42,7 +42,20 @@ function init() {
   $("zoomIn").onclick  = () => zoomAt(1.3);
   $("zoomOut").onclick = () => zoomAt(1 / 1.3);
   $("legendBtn").onclick = () => $("legendPanel").classList.toggle("show");
-  $("rulerBtn").onclick = toggleRuler;
+
+  // Линейка отключается флагом CONFIG.RULER_ENABLED без удаления кода
+  if (CONFIG.RULER_ENABLED) {
+    $("rulerBtn").onclick = toggleRuler;
+  } else {
+    const rb = $("rulerBtn");
+    if (rb) rb.style.display = "none";
+    // гарантированно выключаем режимы линейки/выбора масштаба через клики по карте
+    rulerMode = false;
+    scalePickMode = false;
+    measurePoints = [];
+    scalePickPts = [];
+    drawMeasure();
+  }
 
   $("adminBtn").onclick = () => {
     if (window.innerWidth < CONFIG.MIN_ADMIN_WIDTH) {
