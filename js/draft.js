@@ -36,6 +36,7 @@ function revertDraft() {
   draft = null;
   clearDirty();
   renderMarkers();
+  drawCurves();       // ← новое
   drawMeasure();
 }
 
