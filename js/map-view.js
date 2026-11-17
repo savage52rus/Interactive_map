@@ -37,17 +37,17 @@ function setupMapEvents() {
     if (e.button !== 0 && e.button !== 2) return;
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
-        e.target.closest(".overlay")) return;
+        e.target.closest(".overlay") || e.target.closest("#contextMenu")) return;
 
-    // ПКМ по дороге в админке — удаление
+    // ПКМ в админке: контекстное меню для дороги
     if (e.button === 2 && isAdmin && adminMode) {
-      const roadPath = e.target.closest("path[stroke-dasharray]");
       const roadGroup = e.target.closest("g[data-road-id]");
-      const roadIdAttr = roadGroup && roadGroup.getAttribute("data-road-id");
-      if (roadIdAttr != null) {
-        e.preventDefault();
-        deleteRoad(parseInt(roadIdAttr, 10));
-        return;
+      if (roadGroup) {
+        const roadIdAttr = roadGroup.getAttribute("data-road-id");
+        if (roadIdAttr != null) {
+          openContextMenuAt(e, { kind: "road", id: parseInt(roadIdAttr, 10) });
+          return;
+        }
       }
       return;
     }
@@ -124,7 +124,7 @@ function setupMapEvents() {
     if (movedByPan) { movedByPan = false; return; }
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
-        e.target.closest(".overlay")) return;
+        e.target.closest(".overlay") || e.target.closest("#contextMenu")) return;
     handleMapClick(e.clientX, e.clientY);
   });
 
@@ -132,7 +132,7 @@ function setupMapEvents() {
     if (!(isAdmin && adminMode && editMode === "road")) return;
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
-        e.target.closest(".overlay")) return;
+        e.target.closest(".overlay") || e.target.closest("#contextMenu")) return;
     const p = screenToWorld(e.clientX, e.clientY);
     onRoadMapClick(p, true);
   });
@@ -153,7 +153,7 @@ function setupMapEvents() {
   viewport.addEventListener("touchstart", e => {
     if (e.target.closest(".ui-btn") || e.target.closest("#adminBar") ||
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
-        e.target.closest(".overlay")) return;
+        e.target.closest(".overlay") || e.target.closest("#contextMenu")) return;
     if (isAdmin && adminMode && editMode === "road") {
       const ptEl = e.target.closest("circle[data-pt-index]");
       if (ptEl && e.touches.length === 1) {
