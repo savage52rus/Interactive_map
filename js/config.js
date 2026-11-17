@@ -1,5 +1,5 @@
 const CONFIG = {
-  MAP_SRC: "assets/map.jpg",
+  MAP_SRC: "assets/result.png",
   ADMIN_LOGIN: "admin",
   ADMIN_PASS: "fantasy123",
   MIN_ADMIN_WIDTH: 900,
