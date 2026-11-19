@@ -9,9 +9,9 @@ const CONFIG = {
 
   // === Синхронизация через Google Sheets ===
   // URL веб-приложения Apps Script (из "Развернуть → Новое развёртывание")
-  API_URL: "https://script.google.com/macros/s/ВАШ_ID/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbzwmB0XPG7VXLx_29U0TwUm3tNSwaf-9XpMI3UkpvyY8rXQDwzHU9Aybvep4XXV6hp2/exec",
   // Тот же токен, что в Apps Script
-  SECRET_TOKEN: "ВАШ_СЕКРЕТНЫЙ_ТОКЕН_ЗАМЕНИТЕ_МЕНЯ",
+  SECRET_TOKEN: "a3f8c9d2e1b74f6a8c5d3e9f1b2a7c4d8e6f0a3b5c7d9e1f2a4b6c8d0e2f4a6b",
 
   STORAGE_KEY: "fantasyMapData_v1",
   AUTOSAVE_KEY: "fantasyMapAutosave_v1",
