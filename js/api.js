@@ -81,7 +81,8 @@ async function apiPost(body) {
     const res = await fetch(CONFIG.API_URL, {
       method: "POST",
       mode: "cors",
-      headers: { "Content-Type": "application/json" },
+      // ВАЖНО: используем text/plain, чтобы избежать preflight-запроса OPTIONS
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ ...body, token: CONFIG.SECRET_TOKEN })
     });
     const data = await res.json();
