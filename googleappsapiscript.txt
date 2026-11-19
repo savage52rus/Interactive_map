@@ -14,9 +14,11 @@ function createJsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    .setHeaders({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
 }
 
 function getOrCreateSheet(name, headers) {
@@ -25,7 +27,6 @@ function getOrCreateSheet(name, headers) {
   if (!sheet) {
     sheet = ss.insertSheet(name);
   }
-  // Проверяем, есть ли заголовки в первой строке
   const firstRow = sheet.getRange(1, 1, 1, Math.max(1, headers.length)).getValues()[0];
   const isEmpty = firstRow.every(v => v === "" || v === null);
   if (isEmpty) {
@@ -54,7 +55,7 @@ function findRowById(sheet, id) {
   const idCol = headers.indexOf("id");
   if (idCol < 0) return -1;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(id)) return i + 1; // +1 т.к. массив 0-based
+    if (String(data[i][idCol]) === String(id)) return i + 1;
   }
   return -1;
 }
@@ -65,9 +66,11 @@ function findRowById(sheet, id) {
 function doOptions(e) {
   return ContentService.createTextOutput('')
     .setMimeType(ContentService.MimeType.TEXT)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    .setHeaders({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
 }
 
 // ============================================================
@@ -91,11 +94,7 @@ function doGet(e) {
 
     const roadsRaw = sheetToObjects(roadsSheet).map(r => {
       let pts = [];
-      try { 
-        pts = JSON.parse(r.points || "[]"); 
-      } catch (err) { 
-        pts = []; 
-      }
+      try { pts = JSON.parse(r.points || "[]"); } catch (err) { pts = []; }
       if (!Array.isArray(pts)) pts = [];
       pts = pts
         .map(p => ({ x: Number(p.x), y: Number(p.y) }))
@@ -121,15 +120,13 @@ function doGet(e) {
 // ============================================================
 function doPost(e) {
   try {
-    // Извлекаем данные из тела запроса
     let payload;
     try {
       payload = JSON.parse(e.postData.contents);
     } catch (err) {
-      throw new Error("Ошибка парсинга JSON. Убедитесь, что данные отправлены корректно.");
+      throw new Error("Ошибка парсинга JSON.");
     }
 
-    // Проверка токена безопасности
     if (payload.token !== SECRET_TOKEN) {
       throw new Error("Неверный токен доступа.");
     }
@@ -181,7 +178,6 @@ function handleRoadPost(payload) {
   if (payload.action === "upsert") {
     const r = payload.road || payload.item || {};
     const pointsStr = JSON.stringify(r.points || []);
-    
     const row = headers.map(h => {
       if (h === "points") return pointsStr;
       return r[h] !== undefined ? r[h] : "";
