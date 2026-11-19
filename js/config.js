@@ -1,7 +1,7 @@
 const CONFIG = {
   MAP_SRC: "assets/result.png",
   ADMIN_LOGIN: "sailor",
-  ADMIN_PASS: "msster",
+  ADMIN_PASS: "master",
   MIN_ADMIN_WIDTH: 900,
 
   // Линейка (см. прошлый шаг)
