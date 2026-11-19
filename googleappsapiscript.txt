@@ -1,43 +1,31 @@
 // ============================================================
 // НАСТРОЙКИ
 // ============================================================
-const SECRET_TOKEN = "ВАШ_СЕКРЕТНЫЙ_ТОКЕН_ЗАМЕНИТЕ_МЕНЯ";
+const SECRET_TOKEN = "ВАШ_СЕКРЕТНЫЙ_ТОКЕН_ЗАМЕНИТЕ_МЕНЯ"; // Обязательно поменяйте!
 const SHEET_MARKERS = "Data";
 const SHEET_ROADS   = "Roads";
 const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color"];
 const HEADERS_ROADS   = ["id", "weeks", "points"];
 
 // ============================================================
-// CORS
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  };
-}
-
-function jsonOut(obj) {
+function createJsonResponse(data) {
   return ContentService
-    .createTextOutput(JSON.stringify(obj))
+    .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON)
-    .setHeaders(corsHeaders());
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-function doOptions(e) {
-  return jsonOut({ status: 'ok' });
-}
-
-// ============================================================
-// Служебные: получить лист, создать если нет; получить/дописать заголовки
-// ============================================================
 function getOrCreateSheet(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
   }
+  // Проверяем, есть ли заголовки в первой строке
   const firstRow = sheet.getRange(1, 1, 1, Math.max(1, headers.length)).getValues()[0];
   const isEmpty = firstRow.every(v => v === "" || v === null);
   if (isEmpty) {
@@ -66,15 +54,24 @@ function findRowById(sheet, id) {
   const idCol = headers.indexOf("id");
   if (idCol < 0) return -1;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(id)) return i + 1; // 1-based
+    if (String(data[i][idCol]) === String(id)) return i + 1; // +1 т.к. массив 0-based
   }
   return -1;
 }
 
 // ============================================================
-// GET — отдаём { markers: [...], roads: [...] }
-// Обратная совместимость: если в старом клиенте ожидается массив —
-// параметр ?kind=markers|roads для точечного запроса.
+// ОБРАБОТКА CORS (Preflight)
+// ============================================================
+function doOptions(e) {
+  return ContentService.createTextOutput('')
+    .setMimeType(ContentService.MimeType.TEXT)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+// ============================================================
+// GET — Чтение данных
 // ============================================================
 function doGet(e) {
   try {
@@ -94,7 +91,11 @@ function doGet(e) {
 
     const roadsRaw = sheetToObjects(roadsSheet).map(r => {
       let pts = [];
-      try { pts = JSON.parse(r.points || "[]"); } catch (e) { pts = []; }
+      try { 
+        pts = JSON.parse(r.points || "[]"); 
+      } catch (err) { 
+        pts = []; 
+      }
       if (!Array.isArray(pts)) pts = [];
       pts = pts
         .map(p => ({ x: Number(p.x), y: Number(p.y) }))
@@ -106,35 +107,41 @@ function doGet(e) {
       };
     }).filter(r => r.points.length >= 2);
 
-    if (kind === "markers") return jsonOut(markersRaw);
-    if (kind === "roads")   return jsonOut(roadsRaw);
+    if (kind === "markers") return createJsonResponse(markersRaw);
+    if (kind === "roads")   return createJsonResponse(roadsRaw);
 
-    return jsonOut({ markers: markersRaw, roads: roadsRaw });
+    return createJsonResponse({ markers: markersRaw, roads: roadsRaw });
   } catch (err) {
-    return jsonOut({ error: err.toString() });
+    return createJsonResponse({ error: err.toString() });
   }
 }
 
 // ============================================================
-// POST — единый обработчик для маркеров и дорог
-// payload = { token, kind: "marker"|"road", action: "upsert"|"delete", item | id }
-// Обратная совместимость со старым форматом:
-//   { token, action: "upsert", marker }  → kind=marker
-//   { token, action: "delete", id }      → kind=marker
+// POST — Запись данных
 // ============================================================
 function doPost(e) {
   try {
-    const payload = JSON.parse(e.postData.contents);
-    if (payload.token !== SECRET_TOKEN) throw new Error("Неверный токен доступа.");
+    // Извлекаем данные из тела запроса
+    let payload;
+    try {
+      payload = JSON.parse(e.postData.contents);
+    } catch (err) {
+      throw new Error("Ошибка парсинга JSON. Убедитесь, что данные отправлены корректно.");
+    }
+
+    // Проверка токена безопасности
+    if (payload.token !== SECRET_TOKEN) {
+      throw new Error("Неверный токен доступа.");
+    }
 
     const kind = payload.kind || (payload.marker ? "marker" : "marker");
 
     if (kind === "marker") return handleMarkerPost(payload);
     if (kind === "road")   return handleRoadPost(payload);
 
-    throw new Error("Неизвестный тип: " + kind);
+    throw new Error("Неизвестный тип данных: " + kind);
   } catch (err) {
-    return jsonOut({ status: 'error', message: err.toString() });
+    return createJsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
@@ -146,21 +153,22 @@ function handleMarkerPost(payload) {
     const m = payload.marker || payload.item || {};
     const row = headers.map(h => (m[h] !== undefined ? m[h] : ""));
     const foundRow = findRowById(sheet, m.id);
+    
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return jsonOut({ status: 'ok', kind: 'marker', action: 'updated', id: m.id });
+      return createJsonResponse({ status: 'ok', kind: 'marker', action: 'updated', id: m.id });
     }
     sheet.appendRow(row);
-    return jsonOut({ status: 'ok', kind: 'marker', action: 'created', id: m.id });
+    return createJsonResponse({ status: 'ok', kind: 'marker', action: 'created', id: m.id });
   }
 
   if (payload.action === "delete") {
     const foundRow = findRowById(sheet, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return jsonOut({ status: 'ok', kind: 'marker', action: 'deleted', id: payload.id });
+      return createJsonResponse({ status: 'ok', kind: 'marker', action: 'deleted', id: payload.id });
     }
-    return jsonOut({ status: 'error', message: 'Маркер с таким id не найден.' });
+    return createJsonResponse({ status: 'error', message: 'Маркер с таким id не найден.' });
   }
 
   throw new Error("Неизвестное действие для маркера: " + payload.action);
@@ -173,26 +181,28 @@ function handleRoadPost(payload) {
   if (payload.action === "upsert") {
     const r = payload.road || payload.item || {};
     const pointsStr = JSON.stringify(r.points || []);
+    
     const row = headers.map(h => {
       if (h === "points") return pointsStr;
       return r[h] !== undefined ? r[h] : "";
     });
+    
     const foundRow = findRowById(sheet, r.id);
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return jsonOut({ status: 'ok', kind: 'road', action: 'updated', id: r.id });
+      return createJsonResponse({ status: 'ok', kind: 'road', action: 'updated', id: r.id });
     }
     sheet.appendRow(row);
-    return jsonOut({ status: 'ok', kind: 'road', action: 'created', id: r.id });
+    return createJsonResponse({ status: 'ok', kind: 'road', action: 'created', id: r.id });
   }
 
   if (payload.action === "delete") {
     const foundRow = findRowById(sheet, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return jsonOut({ status: 'ok', kind: 'road', action: 'deleted', id: payload.id });
+      return createJsonResponse({ status: 'ok', kind: 'road', action: 'deleted', id: payload.id });
     }
-    return jsonOut({ status: 'error', message: 'Дорога с таким id не найдена.' });
+    return createJsonResponse({ status: 'error', message: 'Дорога с таким id не найдена.' });
   }
 
   throw new Error("Неизвестное действие для дороги: " + payload.action);
