@@ -8,19 +8,8 @@ const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color"];
 const HEADERS_ROADS   = ["id", "weeks", "points"];
 
 // ============================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ТАБЛИЦ
 // ============================================================
-function createJsonResponse(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeaders({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-}
-
 function getOrCreateSheet(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
@@ -61,24 +50,13 @@ function findRowById(sheet, id) {
 }
 
 // ============================================================
-// ОБРАБОТКА CORS (Preflight)
-// ============================================================
-function doOptions(e) {
-  return ContentService.createTextOutput('')
-    .setMimeType(ContentService.MimeType.TEXT)
-    .setHeaders({
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-}
-
-// ============================================================
-// GET — Чтение данных
+// GET — Чтение данных (с поддержкой JSONP)
 // ============================================================
 function doGet(e) {
   try {
     const kind = e && e.parameter ? e.parameter.kind : null;
+    const callback = e && e.parameter ? e.parameter.callback : null;
+
     const markersSheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
     const roadsSheet   = getOrCreateSheet(SHEET_ROADS,   HEADERS_ROADS);
 
@@ -106,12 +84,37 @@ function doGet(e) {
       };
     }).filter(r => r.points.length >= 2);
 
-    if (kind === "markers") return createJsonResponse(markersRaw);
-    if (kind === "roads")   return createJsonResponse(roadsRaw);
+    let dataToReturn;
+    if (kind === "markers") dataToReturn = markersRaw;
+    else if (kind === "roads") dataToReturn = roadsRaw;
+    else dataToReturn = { markers: markersRaw, roads: roadsRaw };
 
-    return createJsonResponse({ markers: markersRaw, roads: roadsRaw });
+    const jsonString = JSON.stringify(dataToReturn);
+
+    // Если передан callback (JSONP) — оборачиваем в функцию
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + jsonString + ');')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+
+    // Иначе отдаём обычный JSON
+    return ContentService
+      .createTextOutput(jsonString)
+      .setMimeType(ContentService.MimeType.JSON);
+
   } catch (err) {
-    return createJsonResponse({ error: err.toString() });
+    const callback = e && e.parameter ? e.parameter.callback : null;
+    const errJson = JSON.stringify({ error: err.toString() });
+    
+    if (callback) {
+      return ContentService
+        .createTextOutput(callback + '(' + errJson + ');')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService
+      .createTextOutput(errJson)
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -138,7 +141,10 @@ function doPost(e) {
 
     throw new Error("Неизвестный тип данных: " + kind);
   } catch (err) {
-    return createJsonResponse({ status: 'error', message: err.toString() });
+    // Для POST JSONP не используется, поэтому отдаем обычный JSON
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -153,19 +159,19 @@ function handleMarkerPost(payload) {
     
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return createJsonResponse({ status: 'ok', kind: 'marker', action: 'updated', id: m.id });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'updated', id: m.id })).setMimeType(ContentService.MimeType.JSON);
     }
     sheet.appendRow(row);
-    return createJsonResponse({ status: 'ok', kind: 'marker', action: 'created', id: m.id });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'created', id: m.id })).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (payload.action === "delete") {
     const foundRow = findRowById(sheet, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return createJsonResponse({ status: 'ok', kind: 'marker', action: 'deleted', id: payload.id });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'deleted', id: payload.id })).setMimeType(ContentService.MimeType.JSON);
     }
-    return createJsonResponse({ status: 'error', message: 'Маркер с таким id не найден.' });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Маркер не найден.' })).setMimeType(ContentService.MimeType.JSON);
   }
 
   throw new Error("Неизвестное действие для маркера: " + payload.action);
@@ -186,19 +192,19 @@ function handleRoadPost(payload) {
     const foundRow = findRowById(sheet, r.id);
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return createJsonResponse({ status: 'ok', kind: 'road', action: 'updated', id: r.id });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'updated', id: r.id })).setMimeType(ContentService.MimeType.JSON);
     }
     sheet.appendRow(row);
-    return createJsonResponse({ status: 'ok', kind: 'road', action: 'created', id: r.id });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'created', id: r.id })).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (payload.action === "delete") {
     const foundRow = findRowById(sheet, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return createJsonResponse({ status: 'ok', kind: 'road', action: 'deleted', id: payload.id });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'deleted', id: payload.id })).setMimeType(ContentService.MimeType.JSON);
     }
-    return createJsonResponse({ status: 'error', message: 'Дорога с таким id не найдена.' });
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Дорога не найдена.' })).setMimeType(ContentService.MimeType.JSON);
   }
 
   throw new Error("Неизвестное действие для дороги: " + payload.action);
