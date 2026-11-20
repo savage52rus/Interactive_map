@@ -1,11 +1,51 @@
-/* Синхронизация с Google Sheets через Apps Script */
+/* Синхронизация с Google Sheets через Apps Script (JSONP для GET, fetch для POST) */
 
-/* ---------- Маркеры ---------- */
+// Вспомогательная функция для JSONP-запроса
+function jsonpRequest(url) {
+  return new Promise((resolve, reject) => {
+    // Уникальное имя для функции-коллбэка
+    const callbackName = 'jsonp_cb_' + Math.round(100000 * Math.random());
+    
+    // Создаём скрипт
+    const script = document.createElement('script');
+    
+    // Очистка после завершения
+    const cleanup = () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+    };
+
+    // Таймаут на случай, если сервер не ответит
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Таймаут запроса"));
+    }, 15000);
+
+    // Определяем глобальную функцию, которую вызовет GAS
+    window[callbackName] = (data) => {
+      clearTimeout(timeout);
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = (err) => {
+      clearTimeout(timeout);
+      cleanup();
+      reject(new Error("Ошибка загрузки скрипта"));
+    };
+
+    // Добавляем параметр callback к URL
+    const separator = url.includes('?') ? '&' : '?';
+    script.src = url + separator + 'callback=' + callbackName;
+    
+    document.body.appendChild(script);
+  });
+}
+
+/* ---------- Маркеры (Чтение) ---------- */
 async function apiFetchMarkers() {
   try {
-    const res = await fetch(CONFIG.API_URL + "?kind=markers", { method: "GET", mode: "cors" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    const data = await jsonpRequest(CONFIG.API_URL + "?kind=markers");
     if (!Array.isArray(data)) {
       if (data && data.error) throw new Error(data.error);
       throw new Error("Неожиданный ответ сервера");
@@ -25,25 +65,14 @@ async function apiFetchMarkers() {
   }
 }
 
-// Совместимость со старым именем (используется в main.js)
 async function apiFetchAll() {
   return apiFetchMarkers();
 }
 
-async function apiUpsertMarker(marker) {
-  return apiPost({ kind: "marker", action: "upsert", marker });
-}
-
-async function apiDeleteMarker(id) {
-  return apiPost({ kind: "marker", action: "delete", id });
-}
-
-/* ---------- Дороги ---------- */
+/* ---------- Дороги (Чтение) ---------- */
 async function apiFetchRoads() {
   try {
-    const res = await fetch(CONFIG.API_URL + "?kind=roads", { method: "GET", mode: "cors" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    const data = await jsonpRequest(CONFIG.API_URL + "?kind=roads");
     if (!Array.isArray(data)) {
       if (data && data.error) throw new Error(data.error);
       throw new Error("Неожиданный ответ сервера");
@@ -67,6 +96,15 @@ async function apiFetchRoads() {
   }
 }
 
+/* ---------- Запись (POST работает как раньше) ---------- */
+async function apiUpsertMarker(marker) {
+  return apiPost({ kind: "marker", action: "upsert", marker });
+}
+
+async function apiDeleteMarker(id) {
+  return apiPost({ kind: "marker", action: "delete", id });
+}
+
 async function apiUpsertRoad(road) {
   return apiPost({ kind: "road", action: "upsert", road });
 }
@@ -75,13 +113,11 @@ async function apiDeleteRoad(id) {
   return apiPost({ kind: "road", action: "delete", id });
 }
 
-/* ---------- Универсальный POST ---------- */
 async function apiPost(body) {
   try {
     const res = await fetch(CONFIG.API_URL, {
       method: "POST",
       mode: "cors",
-      // ВАЖНО: используем text/plain, чтобы избежать preflight-запроса OPTIONS
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ ...body, token: CONFIG.SECRET_TOKEN })
     });
