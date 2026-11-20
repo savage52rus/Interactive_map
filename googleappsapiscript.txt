@@ -148,12 +148,21 @@ function doPost(e) {
   }
 }
 
+// ============================================================
+// ОБРАБОТКА МАРКЕРОВ
+// ============================================================
 function handleMarkerPost(payload) {
   const sheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
   const headers = sheet.getRange(1, 1, 1, HEADERS_MARKERS.length).getValues()[0];
 
   if (payload.action === "upsert") {
     const m = payload.marker || payload.item || {};
+    
+    // Защита: если ID нет или он пустой, генерируем новый (по времени)
+    if (!m.id || m.id === "") {
+      m.id = Date.now(); 
+    }
+    
     const row = headers.map(h => (m[h] !== undefined ? m[h] : ""));
     const foundRow = findRowById(sheet, m.id);
     
@@ -161,6 +170,7 @@ function handleMarkerPost(payload) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
       return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'updated', id: m.id })).setMimeType(ContentService.MimeType.JSON);
     }
+    
     sheet.appendRow(row);
     return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'created', id: m.id })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -177,12 +187,21 @@ function handleMarkerPost(payload) {
   throw new Error("Неизвестное действие для маркера: " + payload.action);
 }
 
+// ============================================================
+// ОБРАБОТКА ДОРОГ
+// ============================================================
 function handleRoadPost(payload) {
   const sheet = getOrCreateSheet(SHEET_ROADS, HEADERS_ROADS);
   const headers = sheet.getRange(1, 1, 1, HEADERS_ROADS.length).getValues()[0];
 
   if (payload.action === "upsert") {
     const r = payload.road || payload.item || {};
+    
+    // Защита для дорог: если ID нет, генерируем
+    if (!r.id || r.id === "") {
+      r.id = Date.now();
+    }
+
     const pointsStr = JSON.stringify(r.points || []);
     const row = headers.map(h => {
       if (h === "points") return pointsStr;
