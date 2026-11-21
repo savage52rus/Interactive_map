@@ -39,7 +39,6 @@ function setupMapEvents() {
         e.target.closest("#legendPanel") || e.target.closest("#markerPopup") ||
         e.target.closest(".overlay") || e.target.closest("#contextMenu")) return;
 
-    // ПКМ в админке: контекстное меню для дороги
     if (e.button === 2 && isAdmin && adminMode) {
       const roadGroup = e.target.closest("g[data-road-id]");
       if (roadGroup) {
@@ -52,7 +51,6 @@ function setupMapEvents() {
       return;
     }
 
-    // опорная точка дороги
     if (isAdmin && adminMode && editMode === "road") {
       const ptEl = e.target.closest("circle[data-pt-index]");
       if (ptEl) {
@@ -266,11 +264,18 @@ function handleMapClick(cx, cy) {
   if (isAdmin && adminMode && editMode === "place" && placingType) {
     const p = screenToWorld(cx, cy);
     ensureDraft();
+    
+    // Защита от NaN: если nextId нет, ставим максимум + 1
+    if (typeof draft.nextId !== 'number' || isNaN(draft.nextId)) {
+      draft.nextId = Math.max(0, ...draft.markers.map(m => parseInt(m.id) || 0)) + 1;
+    }
+
+    const newId = draft.nextId++;
     const marker = {
-      id: draft.nextId++,
+      id: newId,
       type: placingType,
       x: p.x, y: p.y,
-      name: TYPES[placingType].label + " " + draft.nextId,
+      name: TYPES[placingType].label + " " + newId,
       desc: "", color: "#c9a227"
     };
     draft.markers.push(marker);
