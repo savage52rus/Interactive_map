@@ -18,25 +18,27 @@ async function saveEdit() {
   const m = draft.markers.find(x => x.id === editingId);
   if (!m) { closeEdit(); return; }
 
-  // Считываем данные из формы
+  // считываем форму
   m.type = $("editType").value;
   m.name = $("editName").value.trim() || (TYPES[m.type] ? TYPES[m.type].label : "Без названия");
   m.desc = $("editDesc").value;
   m.color = $("editColor").value;
-  
-  // НА ВСЯКИЙ СЛУЧАЙ проверяем, что id не потерялся
-  if (!m.id) {
-    m.id = draft.nextId++;
+
+  // ЗАЩИТА: если id потерялся, принудительно ставим
+  if (!m.id || isNaN(m.id)) {
+    m.id = Date.now(); 
   }
 
-  // Отправляем на сервер
+  console.log("Отправляем маркер в GAS:", JSON.parse(JSON.stringify(m)));
+
+  // отправляем на сервер
   const result = await apiUpsertMarker(m);
   if (result.status !== "ok") {
     alert("Не удалось сохранить маркер на сервере: " + (result.message || "ошибка"));
     return;
   }
 
-  // Обновляем локальное состояние
+  // применяем локально + кэш
   state.markers = draft.markers;
   persistState();
   renderMarkers();
