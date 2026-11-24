@@ -141,7 +141,7 @@ function doPost(e) {
 
     throw new Error("Неизвестный тип данных: " + kind);
   } catch (err) {
-    // Для POST JSONP не используется, поэтому отдаем обычный JSON
+    // Для POST JSONP не используется, отдаем обычный JSON
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
