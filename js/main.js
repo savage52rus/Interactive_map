@@ -6,12 +6,10 @@ async function init() {
   updateAutosaveUI();
   startAutosaveTimer();
 
-  // === Загрузка данных с сервера (единый источник правды) ===
-  // localStorage оставляем как кэш для показа, если сервер недоступен
   const cached = (() => {
-    try { return JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || "null"); }
-    catch { return null; }
+    try { return JSON.parse(localStorage.getItem(CONFIG.STORAGE_KEY) || "null"); } catch { return null; }
   })();
+  
   if (cached && Array.isArray(cached.markers)) {
     state.markers = cached.markers;
     state.roads = Array.isArray(cached.roads) ? cached.roads : [];
@@ -22,9 +20,11 @@ async function init() {
 
   const remote = await apiFetchAll();
   if (remote) {
-    state.markers = remote;
-    state.nextId = Math.max(0, ...remote.map(m => m.id || 0)) + 1;
-    persistState(); // обновим кэш
+    state.markers = remote.markers;
+    state.roads = remote.roads;
+    state.nextId = Math.max(0, ...remote.markers.map(m => m.id || 0)) + 1;
+    state.nextRoadId = Math.max(0, ...remote.roads.map(r => r.id || 0)) + 1;
+    persistState();
   } else {
     setHint("Сервер недоступен — показаны локально сохранённые данные");
     setTimeout(() => setHint(""), 3500);
@@ -61,12 +61,10 @@ async function init() {
   };
   mapImg.src = CONFIG.MAP_SRC;
 
-  // кнопки
   $("zoomIn").onclick  = () => zoomAt(1.3);
   $("zoomOut").onclick = () => zoomAt(1 / 1.3);
   $("legendBtn").onclick = () => $("legendPanel").classList.toggle("show");
 
-  // Линейка
   if (CONFIG.RULER_ENABLED) {
     $("rulerBtn").onclick = toggleRuler;
   } else {
