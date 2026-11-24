@@ -44,22 +44,29 @@ function updateModeLabel() {
 
 function toggleAdminMode() {
   if (!isAdmin) return;
-  adminMode = !adminMode;
-  $("adminBar").classList.toggle("show", adminMode);
-  if (!adminMode) {
+  
+  if (adminMode) {
+    if (hasUnsaved) {
+      if (!confirm("Есть несохранённые изменения. Выйти без сохранения?")) {
+        return; 
+      }
+    }
+    adminMode = false;
+    $("adminBar").classList.remove("show");
     setEditMode("view");
     setHint("");
-    if (hasUnsaved && !confirm("Есть несохранённые изменения. Выйти без сохранения?")) {
-      adminMode = true; $("adminBar").classList.add("show"); return;
-    }
     draft = null; clearDirty(); renderMarkers(); drawRoads();
   } else {
+    adminMode = true;
+    $("adminBar").classList.add("show");
     drawRoads();
   }
 }
 
 function exitAdmin() {
-  if (hasUnsaved && !confirm("Есть несохранённые изменения. Выйти без сохранения?")) return;
+  if (hasUnsaved) {
+    if (!confirm("Есть несохранённые изменения. Выйти без сохранения?")) return;
+  }
   draft = null; clearDirty();
   isAdmin = false; adminMode = false;
   $("adminBar").classList.remove("show");
