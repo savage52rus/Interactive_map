@@ -1,11 +1,8 @@
-/* Дороги (кривые Безье-пути): состояние, отрисовка, редактирование, удаление */
-
 let roadDraft = null;
 let roadEditing = null;
 let roadDragPointIndex = -1;
 let pendingRoad = null;
 
-/* ---------- начало/завершение новой дороги ---------- */
 function startNewRoad() {
   setEditMode("road");
   roadDraft = { points: [], tempPoint: null };
@@ -35,7 +32,6 @@ function cancelNewRoad() {
   setHint("");
 }
 
-/* ---------- окно «Сколько недель пути?» ---------- */
 function openWeeksDialog(pointCount, points, existingId) {
   pendingRoad = {
     points: points.map(p => ({ x: p.x, y: p.y })),
@@ -48,7 +44,7 @@ function openWeeksDialog(pointCount, points, existingId) {
   setTimeout(() => $("weeksInput").focus(), 50);
 }
 
-async function confirmWeeks() {
+function confirmWeeks() {
   const raw = $("weeksInput").value.trim();
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0 || Math.floor(n) !== n) {
@@ -75,15 +71,6 @@ async function confirmWeeks() {
     draft.roads.push(target);
   }
 
-  // синхронизация с сервером
-  if (target) {
-    const res = await apiUpsertRoad(target);
-    if (res.status !== "ok") {
-      alert("Не удалось сохранить дорогу на сервере: " + (res.message || "ошибка"));
-      return;
-    }
-  }
-
   roadDraft = null;
   roadEditing = null;
   pendingRoad = null;
@@ -104,7 +91,6 @@ function cancelWeeks() {
   }
 }
 
-/* ---------- построение пути Безье по точкам (Catmull-Rom → Bezier) ---------- */
 function buildBezierPath(points) {
   if (!points || points.length < 2) return "";
   if (points.length === 2) {
@@ -127,7 +113,6 @@ function buildBezierPath(points) {
   return d;
 }
 
-/* ---------- пунктир: количество штрихов = weeks ---------- */
 function buildDashedPath(points, weeks) {
   const pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
   const d = buildBezierPath(points);
@@ -142,7 +127,6 @@ function buildDashedPath(points, weeks) {
   return { path: d, dashArray: `${dash} ${gap}`, total };
 }
 
-/* ---------- перерисовка всех дорог ---------- */
 function drawRoads() {
   const layer = $("roadsSvg");
   if (!layer) return;
@@ -255,7 +239,6 @@ function drawDraftPolyline(dObj, layer, isEdit) {
   }
 }
 
-/* ---------- редактирование существующей дороги ---------- */
 function openEditRoad(r) {
   setEditMode("road");
   roadEditing = {
@@ -274,16 +257,9 @@ function finishEditRoad() {
   openWeeksDialog(roadEditing.points.length, roadEditing.points, roadEditing.id);
 }
 
-/* ---------- удаление дороги ---------- */
-async function deleteRoad(roadId) {
+function deleteRoad(roadId) {
   if (!confirm("Удалить эту дорогу? (изменение попадёт в черновик)")) return;
   ensureDraft();
-
-  const res = await apiDeleteRoad(roadId);
-  if (res.status !== "ok") {
-    alert("Не удалось удалить дорогу на сервере: " + (res.message || "ошибка"));
-    return;
-  }
 
   draft.roads = draft.roads.filter(r => r.id !== roadId);
   if (roadEditing && roadEditing.id === roadId) {
@@ -294,7 +270,6 @@ async function deleteRoad(roadId) {
   drawRoads();
 }
 
-/* ---------- клики/движение в режиме road ---------- */
 function onRoadMapClick(worldPt, isDouble) {
   if (roadEditing) {
     if (isDouble) { finishEditRoad(); return; }
