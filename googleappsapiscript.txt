@@ -2,11 +2,11 @@
 // НАСТРОЙКИ
 // ============================================================
 const SECRET_TOKEN = "a3f8c9d2e1b74f6a8c5d3e9f1b2a7c4d8e6f0a3b5c7d9e1f2a4b6c8d0e2f4a6b"; // Обязательно поменяйте!
-const API_VERSION   = 2;
+const API_VERSION   = 3;
 const SHEET_MARKERS = "Data";
 const SHEET_ROADS   = "Roads";
 const SHEET_META    = "Meta";
-const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color"];
+const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color", "icon"];
 const HEADERS_ROADS   = ["id", "weeks", "points"];
 const HEADERS_META    = ["key", "value"];
 
@@ -39,6 +39,7 @@ function normalizeHeaderKey(h) {
     "name": "name", "название": "name", "имя": "name", "title": "name",
     "desc": "desc", "description": "desc", "описание": "desc",
     "color": "color", "цвет": "color",
+    "icon": "icon", "иконка": "icon", "значок": "icon",
     "weeks": "weeks", "недели": "weeks", "нед": "weeks",
     "points": "points", "точки": "points",
     "key": "key", "value": "value"
@@ -233,7 +234,8 @@ function readMarkersFromSheet() {
         y,
         name: nameStr,
         desc: String(obj.desc === null || obj.desc === undefined ? "" : obj.desc),
-        color: /^#[0-9a-fA-F]{6}$/.test(String(obj.color || "").trim()) ? String(obj.color).trim() : "#c9a227"
+        color: /^#[0-9a-fA-F]{6}$/.test(String(obj.color || "").trim()) ? String(obj.color).trim() : "#c9a227",
+        icon: String(obj.icon === null || obj.icon === undefined ? "" : obj.icon).trim()
       });
     }
 
@@ -257,7 +259,8 @@ function readMarkersFromSheet() {
       y: m.y,
       name: m.name,
       desc: m.desc,
-      color: m.color
+      color: m.color,
+      icon: m.icon
     }));
   } finally {
     if (canWrite && lock) {
@@ -542,7 +545,8 @@ function serializeMarkerRow(m, headers) {
     y: isFinite(yVal) ? Math.round(yVal * 100) / 100 : 0,
     name: String(m.name === null || m.name === undefined ? "" : m.name),
     desc: String(m.desc === null || m.desc === undefined ? "" : m.desc),
-    color: /^#[0-9a-fA-F]{6}$/.test(String(m.color || "").trim()) ? String(m.color).trim() : "#c9a227"
+    color: /^#[0-9a-fA-F]{6}$/.test(String(m.color || "").trim()) ? String(m.color).trim() : "#c9a227",
+    icon: String(m.icon === null || m.icon === undefined ? "" : m.icon).trim()
   };
   return headers.map(h => (clean[h] !== undefined ? clean[h] : ""));
 }

@@ -35,7 +35,7 @@ function renderMarkers() {
     el.dataset.index = String(idx);
     el.style.left = m.x + "px";
     el.style.top = m.y + "px";
-    el.innerHTML = svgSprite(m.type, m.color) + `<span class="label">${escapeHtml(m.name)}</span>`;
+    el.innerHTML = svgSprite(m.type, m.color, m.icon) + `<span class="label">${escapeHtml(m.name)}</span>`;
     el.addEventListener("click", e => {
       if (typeof consumeSuppressedClick === "function" && consumeSuppressedClick()) {
         e.stopPropagation();

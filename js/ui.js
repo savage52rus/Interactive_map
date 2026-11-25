@@ -115,7 +115,7 @@ function refreshTypeIconUI() {
   buildAdminIconPicker();
   if (typeof renderMarkers === "function") renderMarkers();
   if (typeof activePopupMarker !== "undefined" && activePopupMarker && $("markerPopup") && $("markerPopup").classList.contains("show")) {
-    $("mpIcon").innerHTML = svgSprite(activePopupMarker.type, activePopupMarker.color);
+    $("mpIcon").innerHTML = svgSprite(activePopupMarker.type, activePopupMarker.color, activePopupMarker.icon);
   }
 }
 
