@@ -21,7 +21,7 @@ function ensureContextMenu() {
   });
   document.body.appendChild(ctxMenuEl);
 
-  document.addEventListener("mousedown", e => {
+  document.addEventListener("pointerdown", e => {
     if (!ctxMenuEl.classList.contains("show")) return;
     if (ctxMenuEl.contains(e.target)) return;
     hideContextMenu();
@@ -63,17 +63,17 @@ function handleContextAction(action) {
   if (!target) return;
   if (target.kind === "road") {
     if (action === "edit") {
-      const r = (draft ? draft : state).roads.find(x => x.id === target.id);
+      const r = draftRoads().find(x => x.id === target.id);
       if (r) openEditRoad(r);
     } else if (action === "delete") {
-      deleteRoad(target.id);   // внутри — apiDeleteRoad
+      deleteRoad(target.id); // помечает удаление в черновике (draft)
     }
   } else if (target.kind === "marker") {
     if (action === "edit") {
-      const m = (draft ? draft : state).markers.find(x => x.id === target.id);
-      if (m) openEdit(m);
+      const m = draftMarkers().find(x => x.id === target.id);
+      if (m) openEdit(m, false);
     } else if (action === "delete") {
-      deleteMarkerById(target.id);  // в markers.js — через apiDeleteMarker
+      deleteMarkerById(target.id); // помечает удаление в черновике (draft)
     }
   }
 }

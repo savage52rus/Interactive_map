@@ -16,6 +16,7 @@
     <div id="markersLayer"></div>
   </div>
 </div>
+<div id="mapLoader" class="show">Загрузка карты…</div>
 
 <div id="topRight">
   <div class="ui-btn" id="zoomIn" title="Приблизить">+</div>
@@ -47,6 +48,13 @@
     <button class="btn" id="modeRoadBtn">〰 Дорога</button>
   </div>
   <div class="ab-mode" id="abModeLabel">Режим: <b>просмотр</b></div>
+
+  <div class="ab-sep"></div>
+  <div class="ab-section ab-collapsible" id="iconPickerToggle" title="Свернуть или развернуть настройку иконок">
+    <span>🎨 Иконки типов</span>
+    <span class="ab-caret" id="iconPickerCaret">▾</span>
+  </div>
+  <div id="adminIconPicker" class="icon-picker"></div>
 
   <div class="ab-sep"></div>
 
@@ -101,7 +109,7 @@
     <label>Пароль</label>
     <input type="password" id="loginPass" autocomplete="current-password" />
     <div class="err" id="loginErr"></div>
-    <div class="hint">Доступ только с компьютера (ширина экрана &gt; 900px).</div>
+    <div class="hint">Доступ только с компьютера (ширина экрана не менее 900px).</div>
     <div class="modal-actions">
       <button class="btn" id="loginCancel">Отмена</button>
       <button class="btn primary" id="loginSubmit">Войти</button>
@@ -111,7 +119,7 @@
 
 <div class="overlay" id="editOverlay">
   <div class="modal">
-    <h2>Редактирование маркера</h2>
+    <h2 id="editModalTitle">Редактирование маркера</h2>
     <label>Тип объекта</label>
     <select id="editType"></select>
     <label>Название</label>
@@ -129,7 +137,7 @@
   </div>
 </div>
 
-<div class="overlay" id="scaleOverlay">
+<div class="overlay floating-overlay" id="scaleOverlay">
   <div class="modal">
     <h2>Масштаб карты</h2>
     <div class="hint">Нажмите на карту и поставьте две точки, реальное расстояние между которыми вам известно.</div>

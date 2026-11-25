@@ -17,16 +17,19 @@ function saveAutosaves(list) {
 
 function makeSnapshot(reason) {
   const src = draft ? draft : state;
+  const markers = normalizeMarkers(src.markers || []);
+  const roads = normalizeRoads(src.roads || []);
   return {
     at: new Date().toISOString(),
     reason: reason || "auto",
-    scale: JSON.parse(JSON.stringify(src.scale)),
-    nextId: src.nextId,
-    nextRoadId: src.nextRoadId,
-    markers: JSON.parse(JSON.stringify(src.markers)),
-    roads: JSON.parse(JSON.stringify(src.roads || [])),
-    markerCount: src.markers.length,
-    roadCount: (src.roads || []).length
+    scale: sanitizeScale(src.scale),
+    typeIcons: sanitizeTypeIcons(src.typeIcons),
+    nextId: Math.max(Number(src.nextId) || 1, computeNextId(markers)),
+    nextRoadId: Math.max(Number(src.nextRoadId) || 1, computeNextId(roads)),
+    markers,
+    roads,
+    markerCount: markers.length,
+    roadCount: roads.length
   };
 }
 
@@ -39,8 +42,17 @@ function scheduleAutosaveSnapshot(reason) {
 }
 
 function startAutosaveTimer() {
-  if (autosaveTimer) clearInterval(autosaveTimer);
-  autosaveTimer = setInterval(() => scheduleAutosaveSnapshot("auto"), CONFIG.AUTOSAVE_INTERVAL_MS);
+  stopAutosaveTimer();
+  autosaveTimer = setInterval(() => {
+    if (isAdmin) scheduleAutosaveSnapshot("auto");
+  }, CONFIG.AUTOSAVE_INTERVAL_MS);
+}
+
+function stopAutosaveTimer() {
+  if (autosaveTimer) {
+    clearInterval(autosaveTimer);
+    autosaveTimer = null;
+  }
 }
 
 function updateAutosaveUI() {
@@ -65,11 +77,12 @@ function downloadAutosave() {
     exportedAt: new Date().toISOString(),
     snapshotAt: snap.at,
     reason: snap.reason,
-    scale: snap.scale,
+    scale: sanitizeScale(snap.scale),
+    typeIcons: sanitizeTypeIcons(snap.typeIcons),
     nextId: snap.nextId,
     nextRoadId: snap.nextRoadId,
-    markers: snap.markers,
-    roads: snap.roads || []
+    markers: normalizeMarkers(snap.markers || []),
+    roads: normalizeRoads(snap.roads || [])
   };
   downloadBlob(JSON.stringify(payload, null, 2),
     `fantasy-map-autosave-${snap.at.slice(0, 19).replace(/[:T]/g, "-")}.json`);
@@ -90,12 +103,13 @@ function openRestoreAutosave() {
 function applyRestoreAutosave() {
   if (!pendingAutosave) return;
   ensureDraft();
-  draft.markers = JSON.parse(JSON.stringify(pendingAutosave.markers));
-  draft.roads = JSON.parse(JSON.stringify(pendingAutosave.roads || []));
-  draft.scale = JSON.parse(JSON.stringify(pendingAutosave.scale));
-  draft.nextId = pendingAutosave.nextId || (Math.max(0, ...draft.markers.map(m => m.id)) + 1);
-  draft.nextRoadId = pendingAutosave.nextRoadId || (Math.max(0, ...draft.roads.map(r => r.id)) + 1);
-  renderMarkers();
+  draft.markers = normalizeMarkers(pendingAutosave.markers || []);
+  draft.roads = normalizeRoads(pendingAutosave.roads || []);
+  draft.scale = sanitizeScale(pendingAutosave.scale);
+  draft.typeIcons = sanitizeTypeIcons(pendingAutosave.typeIcons);
+  draft.nextId = Math.max(Number(pendingAutosave.nextId) || 1, computeNextId(draft.markers));
+  draft.nextRoadId = Math.max(Number(pendingAutosave.nextRoadId) || 1, computeNextId(draft.roads));
+  refreshTypeIconUI();
   drawRoads();
   drawMeasure();
   markDirty();

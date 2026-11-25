@@ -12,6 +12,25 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 #mapImg { display: block; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 
+#mapLoader {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 15;
+  background: var(--panel);
+  border: 1px solid var(--gold);
+  color: var(--gold-2);
+  padding: 12px 22px;
+  border-radius: 12px;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.75);
+  pointer-events: none;
+  display: none;
+}
+#mapLoader.show { display: block; }
+
 /* слой дорог: события только на интерактивных элементах */
 #roadsSvg {
   position: absolute; top: 0; left: 0;
@@ -86,6 +105,19 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
   display: none; align-items: center; justify-content: center; padding: 16px;
 }
 .overlay.show { display: flex; }
+.overlay.floating-overlay {
+  background: transparent;
+  pointer-events: none;
+  align-items: flex-end;
+  justify-content: flex-end;
+  z-index: 32;
+}
+.overlay.floating-overlay .modal {
+  pointer-events: auto;
+  width: 340px;
+  border-color: var(--gold);
+  box-shadow: 0 12px 40px rgba(0,0,0,.85);
+}
 .modal {
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
   padding: 22px; width: 440px; max-width: 100%; max-height: 90vh; overflow-y: auto;
@@ -115,7 +147,7 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #adminBar {
   position: fixed; top: 14px; left: 14px; z-index: 30;
   background: var(--panel); border: 1px solid var(--gold); border-radius: 12px;
-  padding: 10px; display: none; flex-direction: column; gap: 8px; max-width: 300px;
+  padding: 10px; display: none; flex-direction: column; gap: 8px; width: 286px; max-width: calc(100vw - 28px);
   box-shadow: 0 10px 40px rgba(0,0,0,.7);
   max-height: calc(100vh - 28px); overflow-y: auto;
 }
@@ -139,6 +171,38 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #adminBar .ab-mode b { color: var(--gold-2); }
 #adminBar .btn.mode-on { background: var(--gold); color: #1a1510; border-color: var(--gold-2); font-weight: bold; }
 #adminBar .ab-section { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; padding: 2px 4px 0; }
+#adminBar .ab-collapsible {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; user-select: none; padding: 3px 4px; border-radius: 6px;
+  transition: color .15s, background .15s;
+}
+#adminBar .ab-collapsible:hover { color: var(--gold-2); background: var(--panel-2); }
+#adminBar .ab-caret { font-size: 12px; color: var(--gold); transition: transform .15s ease; }
+#adminBar .ab-collapsible.collapsed .ab-caret { transform: rotate(-90deg); }
+
+.icon-picker { display: flex; flex-direction: column; gap: 8px; padding: 2px 0; }
+.icon-picker.collapsed { display: none; }
+.icon-type-group { display: flex; flex-direction: column; gap: 4px; }
+.icon-type-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11px; padding: 0 2px; gap: 6px;
+}
+.icon-type-head .ith-label { color: var(--gold-2); font-weight: bold; }
+.icon-type-head .ith-variant { color: var(--text-dim); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-type-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.icon-opt {
+  height: 42px; padding: 4px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s, transform .1s;
+}
+.icon-opt:hover { border-color: var(--gold); transform: translateY(-1px); }
+.icon-opt.active {
+  border-color: var(--gold-2);
+  background: #332a1d;
+  box-shadow: 0 0 0 1px var(--gold-2), inset 0 0 10px rgba(201,162,39,.25);
+}
+.icon-opt svg { width: 28px; height: 28px; display: block; pointer-events: none; }
+
 #autosaveInfo { font-size: 11px; color: var(--text-dim); text-align: center; padding: 2px 4px; }
 #autosaveInfo b { color: var(--gold-2); }
 
@@ -151,7 +215,7 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #modeHint.show { display: block; }
 
 #measureSvg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
-#measureSvg line { stroke: var(--gold-2); stroke-width: 3; stroke-dasharray: 8 6; filter: drop-shadow(0 0 3px #000); }
+#measureSvg line { stroke: var(--gold-2); filter: drop-shadow(0 0 3px #000); }
 
 /* ---------- Контекстное меню ---------- */
 .context-menu {
@@ -197,6 +261,8 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
   #adminBar { left: 10px; top: 10px; max-width: 210px; padding: 8px; }
   .pal-item { width: 36px; height: 36px; }
   .pal-item svg { width: 26px; height: 26px; }
+  .icon-opt { height: 34px; padding: 3px; }
+  .icon-opt svg { width: 22px; height: 22px; }
   #legendPanel { left: 10px; bottom: 58px; max-width: calc(100vw - 20px); }
   .context-menu { min-width: 160px; }
   .context-menu .ctx-item { font-size: 13px; padding: 10px 12px; }

@@ -2,114 +2,370 @@
 // НАСТРОЙКИ
 // ============================================================
 const SECRET_TOKEN = "a3f8c9d2e1b74f6a8c5d3e9f1b2a7c4d8e6f0a3b5c7d9e1f2a4b6c8d0e2f4a6b"; // Обязательно поменяйте!
+const API_VERSION   = 2;
 const SHEET_MARKERS = "Data";
 const SHEET_ROADS   = "Roads";
+const SHEET_META    = "Meta";
 const HEADERS_MARKERS = ["id", "type", "x", "y", "name", "desc", "color"];
 const HEADERS_ROADS   = ["id", "weeks", "points"];
+const HEADERS_META    = ["key", "value"];
 
 // ============================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ТАБЛИЦ
 // ============================================================
-function getOrCreateSheet(name, headers) {
+function isValidCallback(cb) {
+  return typeof cb === "string" && /^[a-zA-Z_$][0-9a-zA-Z_$]*$/.test(cb);
+}
+
+function parseNum(v) {
+  if (typeof v === "number") return isFinite(v) ? v : NaN;
+  if (typeof v === "string") {
+    const s = v.trim().replace(",", ".");
+    if (!s) return NaN;
+    const n = Number(s);
+    return isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+
+function normalizeHeaderKey(h) {
+  const s = String(h === null || h === undefined ? "" : h).trim().toLowerCase();
+  const aliases = {
+    "id": "id", "ид": "id", "№": "id", "num": "id",
+    "type": "type", "тип": "type",
+    "x": "x", "х": "x", // латиница x и кириллица х
+    "y": "y", "у": "y", // латиница y и кириллица у
+    "name": "name", "название": "name", "имя": "name", "title": "name",
+    "desc": "desc", "description": "desc", "описание": "desc",
+    "color": "color", "цвет": "color",
+    "weeks": "weeks", "недели": "weeks", "нед": "weeks",
+    "points": "points", "точки": "points",
+    "key": "key", "value": "value"
+  };
+  return aliases[s] || s;
+}
+
+/*
+ * Гарантирует наличие листа и всех обязательных заголовков (включая "id", "x", "y" и т.д.),
+ * даже если лист создавался вручную с заголовками в другом регистре/порядке или без колонки "id".
+ */
+function ensureSheetStructure(name, expectedHeaders, allowWrite) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
+    sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+    return { sheet, headers: expectedHeaders.slice() };
   }
-  const firstRow = sheet.getRange(1, 1, 1, Math.max(1, headers.length)).getValues()[0];
-  const isEmpty = firstRow.every(v => v === "" || v === null);
-  if (isEmpty) {
+
+  const data = sheet.getDataRange().getValues();
+  const rawFirst = data.length > 0 ? data[0] : [];
+  const allEmpty = rawFirst.length === 0 || rawFirst.every(v => v === "" || v === null);
+
+  if (allEmpty && data.length <= 1) {
+    if (allowWrite !== false) {
+      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+    }
+    return { sheet, headers: expectedHeaders.slice() };
+  }
+
+  const normalizedFirst = rawFirst.map(normalizeHeaderKey);
+  const expectedSet = {};
+  expectedHeaders.forEach(h => { expectedSet[h] = true; });
+
+  const matchedCount = normalizedFirst.filter(h => Boolean(expectedSet[h])).length;
+
+  // Если первая строка содержит данные вместо заголовков — аккуратно вставляем строку заголовков сверху
+  if (matchedCount === 0 && !allEmpty) {
+    if (allowWrite !== false) {
+      sheet.insertRowBefore(1);
+      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      return { sheet, headers: expectedHeaders.slice() };
+    }
+  }
+
+  // Нормализуем регистр/пробелы существующих заголовков и добавляем недостающие обязательные колонки (например, "id")
+  const headers = normalizedFirst.slice();
+  let headerChanged = false;
+  for (let i = 0; i < rawFirst.length; i++) {
+    if (expectedSet[headers[i]] && rawFirst[i] !== headers[i]) {
+      headerChanged = true;
+    }
+  }
+  expectedHeaders.forEach(eh => {
+    if (headers.indexOf(eh) < 0) {
+      // Ищем пустую ячейку или добавляем в конец
+      const emptyIdx = headers.indexOf("");
+      if (emptyIdx >= 0) headers[emptyIdx] = eh;
+      else headers.push(eh);
+      headerChanged = true;
+    }
+  });
+
+  if (headerChanged && allowWrite !== false) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
-  return sheet;
+
+  return { sheet, headers };
 }
 
-function sheetToObjects(sheet) {
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
-  const headers = data[0];
-  return data.slice(1)
-    .filter(r => r[0] !== "" && r[0] !== null)
-    .map(row => {
-      const obj = {};
-      headers.forEach((h, i) => { obj[h] = row[i]; });
-      return obj;
-    });
-}
-
-function findRowById(sheet, id) {
+function findRowById(sheet, headers, id) {
   const data = sheet.getDataRange().getValues();
   if (data.length <= 1) return -1;
-  const headers = data[0];
   const idCol = headers.indexOf("id");
   if (idCol < 0) return -1;
+  const target = String(id).trim();
+  if (!target) return -1;
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(id)) return i + 1;
+    if (String(data[i][idCol]).trim() === target) return i + 1;
   }
   return -1;
+}
+
+function nextAvailableSheetId(sheet, headers) {
+  const data = sheet.getDataRange().getValues();
+  const idCol = headers.indexOf("id");
+  let maxId = 0;
+  if (idCol >= 0) {
+    for (let i = 1; i < data.length; i++) {
+      const n = parseInt(data[i][idCol], 10);
+      if (isFinite(n) && n > maxId) maxId = n;
+    }
+  }
+  return maxId + 1;
+}
+
+function readMetaJson(metaKey) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_META);
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === metaKey && data[i][1]) {
+      try {
+        const parsed = JSON.parse(String(data[i][1]));
+        if (parsed && typeof parsed === "object") return parsed;
+      } catch (err) {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function writeMetaJson(metaKey, obj) {
+  if (!obj || typeof obj !== "object") return;
+  const { sheet } = ensureSheetStructure(SHEET_META, HEADERS_META, true);
+  const data = sheet.getDataRange().getValues();
+  const valStr = JSON.stringify(obj);
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === metaKey) {
+      sheet.getRange(i + 1, 2).setValue(valStr);
+      return;
+    }
+  }
+  sheet.appendRow([metaKey, valStr]);
+}
+
+function readMarkersFromSheet() {
+  const lock = LockService.getScriptLock();
+  const canWrite = lock.tryLock(2000);
+  try {
+    const { sheet, headers } = ensureSheetStructure(SHEET_MARKERS, HEADERS_MARKERS, canWrite);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const idCol = headers.indexOf("id");
+    const usedIds = {};
+    let maxId = 0;
+    const rowsMeta = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row.every(v => v === "" || v === null || v === undefined)) continue;
+
+      const obj = {};
+      headers.forEach((h, idx) => { if (h) obj[h] = row[idx]; });
+
+      const rawId = parseInt(obj.id, 10);
+      const hasValidId = isFinite(rawId) && rawId > 0;
+      const nameStr = String(obj.name === null || obj.name === undefined ? "" : obj.name).trim();
+      const descStr = String(obj.desc === null || obj.desc === undefined ? "" : obj.desc).trim();
+      const xVal = parseNum(obj.x);
+      const yVal = parseNum(obj.y);
+      const x = isFinite(xVal) ? Math.round(xVal * 100) / 100 : 0;
+      const y = isFinite(yVal) ? Math.round(yVal * 100) / 100 : 0;
+
+      // Пропускаем пустые строки-призраки (без id, без названия, в 0;0)
+      if (!hasValidId && !nameStr && !descStr && x === 0 && y === 0) continue;
+
+      let finalId = null;
+      if (hasValidId && !usedIds[rawId]) {
+        finalId = rawId;
+        usedIds[finalId] = true;
+        if (finalId > maxId) maxId = finalId;
+      }
+
+      rowsMeta.push({
+        sheetRow: i + 1,
+        id: finalId,
+        type: String(obj.type || "poi").trim() || "poi",
+        x,
+        y,
+        name: nameStr,
+        desc: String(obj.desc === null || obj.desc === undefined ? "" : obj.desc),
+        color: /^#[0-9a-fA-F]{6}$/.test(String(obj.color || "").trim()) ? String(obj.color).trim() : "#c9a227"
+      });
+    }
+
+    // Проставляем недостающие или дублирующиеся id и сразу сохраняем их в таблицу
+    rowsMeta.forEach(item => {
+      if (item.id === null) {
+        maxId += 1;
+        while (usedIds[maxId]) maxId += 1;
+        item.id = maxId;
+        usedIds[item.id] = true;
+        if (canWrite && idCol >= 0) {
+          sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id);
+        }
+      }
+    });
+
+    return rowsMeta.map(m => ({
+      id: m.id,
+      type: m.type,
+      x: m.x,
+      y: m.y,
+      name: m.name,
+      desc: m.desc,
+      color: m.color
+    }));
+  } finally {
+    if (canWrite) {
+      try { lock.releaseLock(); } catch (e) { /* ignore */ }
+    }
+  }
+}
+
+function readRoadsFromSheet() {
+  const lock = LockService.getScriptLock();
+  const canWrite = lock.tryLock(2000);
+  try {
+    const { sheet, headers } = ensureSheetStructure(SHEET_ROADS, HEADERS_ROADS, canWrite);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const idCol = headers.indexOf("id");
+    const usedIds = {};
+    let maxId = 0;
+    const rowsMeta = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row.every(v => v === "" || v === null || v === undefined)) continue;
+
+      const obj = {};
+      headers.forEach((h, idx) => { if (h) obj[h] = row[idx]; });
+
+      let pts = [];
+      try { pts = JSON.parse(obj.points || "[]"); } catch (err) { pts = []; }
+      if (!Array.isArray(pts)) pts = [];
+      pts = pts
+        .map(p => ({ x: parseNum(p && p.x), y: parseNum(p && p.y) }))
+        .filter(p => isFinite(p.x) && isFinite(p.y))
+        .map(p => ({ x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 }));
+      if (pts.length < 2) continue;
+
+      const rawId = parseInt(obj.id, 10);
+      let finalId = null;
+      if (isFinite(rawId) && rawId > 0 && !usedIds[rawId]) {
+        finalId = rawId;
+        usedIds[finalId] = true;
+        if (finalId > maxId) maxId = finalId;
+      }
+
+      const weeksRaw = parseInt(obj.weeks, 10);
+      rowsMeta.push({
+        sheetRow: i + 1,
+        id: finalId,
+        weeks: (isFinite(weeksRaw) && weeksRaw > 0) ? weeksRaw : 1,
+        points: pts
+      });
+    }
+
+    rowsMeta.forEach(item => {
+      if (item.id === null) {
+        maxId += 1;
+        while (usedIds[maxId]) maxId += 1;
+        item.id = maxId;
+        usedIds[item.id] = true;
+        if (canWrite && idCol >= 0) {
+          sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id);
+        }
+      }
+    });
+
+    return rowsMeta.map(r => ({
+      id: r.id,
+      weeks: r.weeks,
+      points: r.points
+    }));
+  } finally {
+    if (canWrite) {
+      try { lock.releaseLock(); } catch (e) { /* ignore */ }
+    }
+  }
 }
 
 // ============================================================
 // GET — Чтение данных (с поддержкой JSONP)
 // ============================================================
 function doGet(e) {
+  const rawCallback = e && e.parameter ? e.parameter.callback : null;
+  if (rawCallback && !isValidCallback(rawCallback)) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: "Недопустимое имя callback-функции." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  const callback = rawCallback || null;
+
   try {
     const kind = e && e.parameter ? e.parameter.kind : null;
-    const callback = e && e.parameter ? e.parameter.callback : null;
 
-    const markersSheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
-    const roadsSheet   = getOrCreateSheet(SHEET_ROADS,   HEADERS_ROADS);
-
-    const markersRaw = sheetToObjects(markersSheet).map(m => ({
-      id: parseInt(m.id, 10) || 0,
-      type: String(m.type || "poi"),
-      x: Number(m.x) || 0,
-      y: Number(m.y) || 0,
-      name: String(m.name || ""),
-      desc: String(m.desc || ""),
-      color: String(m.color || "#c9a227")
-    }));
-
-    const roadsRaw = sheetToObjects(roadsSheet).map(r => {
-      let pts = [];
-      try { pts = JSON.parse(r.points || "[]"); } catch (err) { pts = []; }
-      if (!Array.isArray(pts)) pts = [];
-      pts = pts
-        .map(p => ({ x: Number(p.x), y: Number(p.y) }))
-        .filter(p => isFinite(p.x) && isFinite(p.y));
-      return {
-        id: parseInt(r.id, 10) || 0,
-        weeks: parseInt(r.weeks, 10) || 1,
-        points: pts
-      };
-    }).filter(r => r.points.length >= 2);
+    const markersRaw = readMarkersFromSheet();
+    const roadsRaw   = readRoadsFromSheet();
+    const scaleRaw   = readMetaJson("scale");
+    const typeIconsRaw = readMetaJson("typeIcons");
 
     let dataToReturn;
     if (kind === "markers") dataToReturn = markersRaw;
     else if (kind === "roads") dataToReturn = roadsRaw;
-    else dataToReturn = { markers: markersRaw, roads: roadsRaw };
+    else dataToReturn = {
+      apiVersion: API_VERSION,
+      markers: markersRaw,
+      roads: roadsRaw,
+      scale: scaleRaw,
+      typeIcons: typeIconsRaw
+    };
 
     const jsonString = JSON.stringify(dataToReturn);
 
-    // Если передан callback (JSONP) — оборачиваем в функцию
     if (callback) {
       return ContentService
-        .createTextOutput(callback + '(' + jsonString + ');')
+        .createTextOutput(callback + "(" + jsonString + ");")
         .setMimeType(ContentService.MimeType.JAVASCRIPT);
     }
 
-    // Иначе отдаём обычный JSON
     return ContentService
       .createTextOutput(jsonString)
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
-    const callback = e && e.parameter ? e.parameter.callback : null;
     const errJson = JSON.stringify({ error: err.toString() });
-    
+
     if (callback) {
       return ContentService
-        .createTextOutput(callback + '(' + errJson + ');')
+        .createTextOutput(callback + "(" + errJson + ");")
         .setMimeType(ContentService.MimeType.JAVASCRIPT);
     }
     return ContentService
@@ -119,9 +375,10 @@ function doGet(e) {
 }
 
 // ============================================================
-// POST — Запись данных
+// POST — Запись данных (с блокировкой LockService)
 // ============================================================
 function doPost(e) {
+  let lock = null;
   try {
     let payload;
     try {
@@ -134,54 +391,244 @@ function doPost(e) {
       throw new Error("Неверный токен доступа.");
     }
 
-    const kind = payload.kind || (payload.marker ? "marker" : "marker");
+    lock = LockService.getScriptLock();
+    lock.waitLock(25000);
 
-    if (kind === "marker") return handleMarkerPost(payload);
-    if (kind === "road")   return handleRoadPost(payload);
+    const kind = payload.kind || (payload.action === "sync" ? "sync" : payload.road ? "road" : "marker");
+
+    if (kind === "sync")      return handleSyncPost(payload);
+    if (kind === "marker")    return handleMarkerPost(payload);
+    if (kind === "road")      return handleRoadPost(payload);
+    if (kind === "scale")     return handleScalePost(payload);
+    if (kind === "typeIcons") return handleTypeIconsPost(payload);
 
     throw new Error("Неизвестный тип данных: " + kind);
   } catch (err) {
-    // Для POST JSONP не используется, отдаем обычный JSON
     return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
+      .createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch (e) { /* ignore */ }
+    }
   }
+}
+
+// ============================================================
+// ПАКЕТНАЯ СИНХРОНИЗАЦИЯ (ЗА ОДИН ЗАПРОС)
+// ============================================================
+function applyBatchToSheet(sheetInfo, canonicalHeaders, deletedIds, upsertedItems, replaceAll, serializeObj) {
+  const sheet = sheetInfo.sheet;
+  const existingHeaders = sheetInfo.headers;
+  const existingData = sheet.getDataRange().getValues();
+  const delSet = {};
+  (deletedIds || []).forEach(id => { delSet[String(id).trim()] = true; });
+
+  let maxId = 0;
+  if (!replaceAll) {
+    const idIdx = existingHeaders.indexOf("id");
+    if (idIdx >= 0) {
+      for (let i = 1; i < existingData.length; i++) {
+        const eid = parseInt(existingData[i][idIdx], 10);
+        if (isFinite(eid) && eid > maxId) maxId = eid;
+      }
+    }
+  }
+  (upsertedItems || []).forEach(item => {
+    const uid = parseInt(item && item.id, 10);
+    if (isFinite(uid) && uid > maxId) maxId = uid;
+  });
+
+  const upsertMap = {};
+  const upsertOrder = [];
+  (upsertedItems || []).forEach(item => {
+    if (!item || typeof item !== "object") return;
+    const copy = Object.assign({}, item);
+    const parsedId = parseInt(copy.id, 10);
+    if (!(isFinite(parsedId) && parsedId > 0)) {
+      maxId += 1;
+      copy.id = maxId;
+    } else {
+      copy.id = parsedId;
+    }
+    const key = String(copy.id);
+    if (!upsertMap[key]) upsertOrder.push(key);
+    upsertMap[key] = copy;
+    delete delSet[key];
+  });
+
+  const nextRows = [canonicalHeaders];
+
+  if (!replaceAll && existingData.length > 1) {
+    for (let i = 1; i < existingData.length; i++) {
+      const row = existingData[i];
+      if (row.every(v => v === "" || v === null || v === undefined)) continue;
+
+      const rowObj = {};
+      existingHeaders.forEach((h, idx) => { if (h) rowObj[h] = row[idx]; });
+
+      const rawId = parseInt(rowObj.id, 10);
+      const hasValidId = isFinite(rawId) && rawId > 0;
+      if (!hasValidId) {
+        // Если это пустая строка-призрак (0;0 без имени и описания) — отбрасываем её
+        const nameStr = String(rowObj.name === null || rowObj.name === undefined ? "" : rowObj.name).trim();
+        const descStr = String(rowObj.desc === null || rowObj.desc === undefined ? "" : rowObj.desc).trim();
+        const rx = parseNum(rowObj.x);
+        const ry = parseNum(rowObj.y);
+        const isZeroCoords = (!isFinite(rx) || rx === 0) && (!isFinite(ry) || ry === 0);
+        const hasPoints = Boolean(rowObj.points && String(rowObj.points).trim() && String(rowObj.points).trim() !== "[]");
+        if (!nameStr && !descStr && isZeroCoords && !hasPoints) continue;
+        maxId += 1;
+        rowObj.id = maxId;
+      } else {
+        rowObj.id = rawId;
+      }
+
+      const rowKey = String(rowObj.id);
+      if (delSet[rowKey]) continue;
+
+      if (upsertMap[rowKey]) {
+        nextRows.push(serializeObj(upsertMap[rowKey], canonicalHeaders));
+        delete upsertMap[rowKey];
+      } else {
+        nextRows.push(serializeObj(rowObj, canonicalHeaders));
+      }
+    }
+  }
+
+  upsertOrder.forEach(key => {
+    if (upsertMap[key]) {
+      nextRows.push(serializeObj(upsertMap[key], canonicalHeaders));
+    }
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, nextRows.length, canonicalHeaders.length).setValues(nextRows);
+}
+
+function serializeMarkerRow(m, headers) {
+  const xVal = parseNum(m.x);
+  const yVal = parseNum(m.y);
+  const clean = {
+    id: parseInt(m.id, 10),
+    type: String(m.type || "poi").trim() || "poi",
+    x: isFinite(xVal) ? Math.round(xVal * 100) / 100 : 0,
+    y: isFinite(yVal) ? Math.round(yVal * 100) / 100 : 0,
+    name: String(m.name === null || m.name === undefined ? "" : m.name),
+    desc: String(m.desc === null || m.desc === undefined ? "" : m.desc),
+    color: /^#[0-9a-fA-F]{6}$/.test(String(m.color || "").trim()) ? String(m.color).trim() : "#c9a227"
+  };
+  return headers.map(h => (clean[h] !== undefined ? clean[h] : ""));
+}
+
+function serializeRoadRow(r, headers) {
+  const ptsStr = typeof r.points === "string" ? r.points : JSON.stringify(r.points || []);
+  const weeksRaw = parseInt(r.weeks, 10);
+  const clean = {
+    id: parseInt(r.id, 10),
+    weeks: (isFinite(weeksRaw) && weeksRaw > 0) ? weeksRaw : 1,
+    points: ptsStr
+  };
+  return headers.map(h => (clean[h] !== undefined ? clean[h] : ""));
+}
+
+function handleSyncPost(payload) {
+  const delMarkers = Array.isArray(payload.deletedMarkerIds) ? payload.deletedMarkerIds : [];
+  const upsMarkers = Array.isArray(payload.upsertedMarkers) ? payload.upsertedMarkers : [];
+  const delRoads   = Array.isArray(payload.deletedRoadIds) ? payload.deletedRoadIds : [];
+  const upsRoads   = Array.isArray(payload.upsertedRoads) ? payload.upsertedRoads : [];
+  const replaceAllMarkers = Boolean(payload.replaceAllMarkers);
+  const replaceAllRoads   = Boolean(payload.replaceAllRoads);
+
+  if (replaceAllMarkers || delMarkers.length > 0 || upsMarkers.length > 0) {
+    const markersInfo = ensureSheetStructure(SHEET_MARKERS, HEADERS_MARKERS, true);
+    applyBatchToSheet(markersInfo, HEADERS_MARKERS, delMarkers, upsMarkers, replaceAllMarkers, serializeMarkerRow);
+  }
+
+  if (replaceAllRoads || delRoads.length > 0 || upsRoads.length > 0) {
+    const roadsInfo = ensureSheetStructure(SHEET_ROADS, HEADERS_ROADS, true);
+    applyBatchToSheet(roadsInfo, HEADERS_ROADS, delRoads, upsRoads, replaceAllRoads, serializeRoadRow);
+  }
+
+  if (payload.scale && typeof payload.scale === "object") {
+    writeMetaJson("scale", payload.scale);
+  }
+
+  if (payload.typeIcons && typeof payload.typeIcons === "object") {
+    writeMetaJson("typeIcons", payload.typeIcons);
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: "ok", action: "synced", apiVersion: API_VERSION }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function handleScalePost(payload) {
+  if (payload.scale && typeof payload.scale === "object") {
+    writeMetaJson("scale", payload.scale);
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: "ok", action: "scale_saved" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function handleTypeIconsPost(payload) {
+  if (payload.typeIcons && typeof payload.typeIcons === "object") {
+    writeMetaJson("typeIcons", payload.typeIcons);
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: "ok", action: "type_icons_saved" }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================
 // ОБРАБОТКА МАРКЕРОВ
 // ============================================================
 function handleMarkerPost(payload) {
-  const sheet = getOrCreateSheet(SHEET_MARKERS, HEADERS_MARKERS);
-  const headers = sheet.getRange(1, 1, 1, HEADERS_MARKERS.length).getValues()[0];
+  const { sheet, headers } = ensureSheetStructure(SHEET_MARKERS, HEADERS_MARKERS, true);
 
   if (payload.action === "upsert") {
-    const m = payload.marker || payload.item || {};
-    
-    // Защита: если ID нет или он пустой, генерируем новый (по времени)
-    if (!m.id || m.id === "") {
-      m.id = Date.now(); 
+    const hasMarkerData = Boolean(
+      (payload.marker && typeof payload.marker === "object") ||
+      (payload.item && typeof payload.item === "object") ||
+      payload.x !== undefined ||
+      payload.y !== undefined
+    );
+    if (!hasMarkerData) {
+      throw new Error("Пустые данные маркера.");
     }
-    
-    const row = headers.map(h => (m[h] !== undefined ? m[h] : ""));
-    const foundRow = findRowById(sheet, m.id);
-    
+
+    const m = Object.assign({}, payload, payload.item || {}, payload.marker || {});
+    const parsedId = parseInt(m.id, 10);
+    m.id = (isFinite(parsedId) && parsedId > 0) ? parsedId : nextAvailableSheetId(sheet, headers);
+
+    const row = serializeMarkerRow(m, headers);
+    const foundRow = findRowById(sheet, headers, m.id);
+
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'updated', id: m.id })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "ok", action: "updated", id: m.id }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     sheet.appendRow(row);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'created', id: m.id })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "ok", action: "created", id: m.id }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   if (payload.action === "delete") {
-    const foundRow = findRowById(sheet, payload.id);
+    const foundRow = findRowById(sheet, headers, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'deleted', id: payload.id })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "ok", action: "deleted", id: payload.id }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Маркер не найден.' })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "ok", action: "already_deleted", id: payload.id }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   throw new Error("Неизвестное действие для маркера: " + payload.action);
@@ -191,39 +638,40 @@ function handleMarkerPost(payload) {
 // ОБРАБОТКА ДОРОГ
 // ============================================================
 function handleRoadPost(payload) {
-  const sheet = getOrCreateSheet(SHEET_ROADS, HEADERS_ROADS);
-  const headers = sheet.getRange(1, 1, 1, HEADERS_ROADS.length).getValues()[0];
+  const { sheet, headers } = ensureSheetStructure(SHEET_ROADS, HEADERS_ROADS, true);
 
   if (payload.action === "upsert") {
-    const r = payload.road || payload.item || {};
-    
-    // Защита для дорог: если ID нет, генерируем
-    if (!r.id || r.id === "") {
-      r.id = Date.now();
-    }
+    const r = Object.assign({}, payload, payload.item || {}, payload.road || {});
+    const parsedId = parseInt(r.id, 10);
+    r.id = (isFinite(parsedId) && parsedId > 0) ? parsedId : nextAvailableSheetId(sheet, headers);
 
-    const pointsStr = JSON.stringify(r.points || []);
-    const row = headers.map(h => {
-      if (h === "points") return pointsStr;
-      return r[h] !== undefined ? r[h] : "";
-    });
-    
-    const foundRow = findRowById(sheet, r.id);
+    const row = serializeRoadRow(r, headers);
+    const foundRow = findRowById(sheet, headers, r.id);
+
     if (foundRow > 0) {
       sheet.getRange(foundRow, 1, 1, headers.length).setValues([row]);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'updated', id: r.id })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "ok", action: "updated", id: r.id }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
+
     sheet.appendRow(row);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'created', id: r.id })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "ok", action: "created", id: r.id }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   if (payload.action === "delete") {
-    const foundRow = findRowById(sheet, payload.id);
+    const foundRow = findRowById(sheet, headers, payload.id);
     if (foundRow > 0) {
       sheet.deleteRow(foundRow);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'ok', action: 'deleted', id: payload.id })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "ok", action: "deleted", id: payload.id }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Дорога не найдена.' })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: "ok", action: "already_deleted", id: payload.id }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   throw new Error("Неизвестное действие для дороги: " + payload.action);

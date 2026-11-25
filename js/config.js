@@ -1,5 +1,6 @@
 const CONFIG = {
-  MAP_SRC: "assets/result.png",
+  MAP_SRC: "assets/result.webp",
+  MAP_FALLBACK_SRC: "assets/result.png",
   ADMIN_LOGIN: "sailor",
   ADMIN_PASS: "master",
   MIN_ADMIN_WIDTH: 900,

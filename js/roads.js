@@ -14,7 +14,6 @@ function startNewRoad() {
 function finishNewRoad() {
   if (!roadDraft) return;
   const pts = roadDraft.points.slice();
-  const temp = roadDraft.tempPoint;
   if (pts.length < 2) {
     setHint("Нужно минимум 2 точки. Дорога отменена.");
     roadDraft = null;
@@ -22,8 +21,7 @@ function finishNewRoad() {
     setTimeout(() => setHint(""), 2000);
     return;
   }
-  if (temp) pts.push(temp);
-  openWeeksDialog(pts.length, pts, null);
+  openWeeksDialog(pts.length, pts, null, null);
 }
 
 function cancelNewRoad() {
@@ -32,13 +30,13 @@ function cancelNewRoad() {
   setHint("");
 }
 
-function openWeeksDialog(pointCount, points, existingId) {
+function openWeeksDialog(pointCount, points, existingId, initialWeeks) {
   pendingRoad = {
     points: points.map(p => ({ x: p.x, y: p.y })),
-    existingId: existingId || null
+    existingId: existingId != null ? existingId : null
   };
   $("weeksInfo").textContent = "Точек в дороге: " + pointCount;
-  $("weeksInput").value = "";
+  $("weeksInput").value = initialWeeks != null ? String(initialWeeks) : "";
   $("weeksErr").textContent = "";
   $("weeksOverlay").classList.add("show");
   setTimeout(() => $("weeksInput").focus(), 50);
@@ -54,6 +52,7 @@ function confirmWeeks() {
   if (!pendingRoad) { $("weeksOverlay").classList.remove("show"); return; }
 
   ensureDraft();
+  draft.roads = normalizeRoads(draft.roads);
 
   let target;
   if (pendingRoad.existingId != null) {
@@ -63,6 +62,7 @@ function confirmWeeks() {
       target.points = pendingRoad.points.map(p => ({ x: p.x, y: p.y }));
     }
   } else {
+    draft.nextRoadId = Math.max(Number(draft.nextRoadId) || 1, computeNextId(draft.roads));
     target = {
       id: draft.nextRoadId++,
       weeks: n,
@@ -113,18 +113,51 @@ function buildBezierPath(points) {
   return d;
 }
 
-function buildDashedPath(points, weeks) {
-  const pathEl = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  const d = buildBezierPath(points);
-  pathEl.setAttribute("d", d);
-  let total = 0;
-  try { total = pathEl.getTotalLength(); } catch (e) { total = 0; }
-  if (!total || !Number.isFinite(total)) total = 1;
-  const n = Math.max(1, Math.floor(weeks));
-  const seg = total / n;
-  const dash = Math.max(2, seg * 0.6);
-  const gap = Math.max(2, seg - dash);
-  return { path: d, dashArray: `${dash} ${gap}`, total };
+function approxPolylineLength(points) {
+  let sum = 0;
+  for (let i = 1; i < points.length; i++) {
+    sum += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return sum;
+}
+
+function approxPolylineMidpoint(points) {
+  const half = approxPolylineLength(points) / 2;
+  let acc = 0;
+  for (let i = 1; i < points.length; i++) {
+    const seg = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    if (acc + seg >= half && seg > 0) {
+      const k = (half - acc) / seg;
+      return {
+        x: points[i - 1].x + (points[i].x - points[i - 1].x) * k,
+        y: points[i - 1].y + (points[i].y - points[i - 1].y) * k
+      };
+    }
+    acc += seg;
+  }
+  return { x: points[0].x, y: points[0].y };
+}
+
+function applyRoadDashes(pathEl, weeks, totalLength, strokeW) {
+  const n = Math.max(1, Math.floor(Number(weeks) || 1));
+  if (n === 1) {
+    pathEl.removeAttribute("stroke-dasharray");
+    pathEl.setAttribute("stroke-linecap", "round");
+    return;
+  }
+  // n штрихов и (n - 1) промежутков покрывают весь путь от начала до конца:
+  // n * dash + (n - 1) * gap = totalLength при gap = 0.5 * dash
+  const dash = totalLength / (1.5 * n - 0.5);
+  const gap = dash * 0.5;
+  if (gap > strokeW * 1.3) {
+    const adjDash = Math.max(strokeW * 0.2, dash - strokeW);
+    const adjGap = gap + strokeW;
+    pathEl.setAttribute("stroke-dasharray", `${adjDash} ${adjGap}`);
+    pathEl.setAttribute("stroke-linecap", "round");
+  } else {
+    pathEl.setAttribute("stroke-dasharray", `${dash} ${gap}`);
+    pathEl.setAttribute("stroke-linecap", "butt");
+  }
 }
 
 function drawRoads() {
@@ -132,47 +165,73 @@ function drawRoads() {
   if (!layer) return;
   layer.innerHTML = "";
 
+  const s = Math.max(0.05, view.scale || 1);
   const roads = draftRoads() || [];
 
   roads.forEach(r => {
+    if (!r.points || r.points.length < 2) return;
+    if (roadEditing && roadEditing.id === r.id) return;
+
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("data-road-id", r.id);
+    layer.appendChild(g);
 
-    const info = buildDashedPath(r.points, r.weeks);
+    const d = buildBezierPath(r.points);
+
+    if (isAdmin && adminMode) {
+      const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      hit.setAttribute("d", d);
+      hit.setAttribute("fill", "none");
+      hit.setAttribute("stroke", "transparent");
+      hit.setAttribute("stroke-width", 14 / s);
+      hit.style.cursor = "pointer";
+      hit.addEventListener("click", onExistingRoadClick(r));
+      g.appendChild(hit);
+    }
+
     const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", info.path);
+    const strokeW = 3 / s;
+    p.setAttribute("d", d);
     p.setAttribute("fill", "none");
     p.setAttribute("stroke", "#e6c55a");
-    p.setAttribute("stroke-width", 3 / view.scale);
-    p.setAttribute("stroke-dasharray", info.dashArray);
-    p.setAttribute("stroke-linecap", "round");
-    p.setAttribute("vector-effect", "non-scaling-stroke");
-    p.style.filter = "drop-shadow(0 0 3px #000)";
+    p.setAttribute("stroke-width", strokeW);
+    p.style.filter = `drop-shadow(0 0 ${Math.max(1, 3 / s)}px #000)`;
     g.appendChild(p);
 
+    // Измеряем длину после добавления в DOM (#roadsSvg) для кроссбраузерной точности
+    let total = 0;
+    try { total = p.getTotalLength(); } catch (e) { total = 0; }
+    if (!total || !Number.isFinite(total)) total = Math.max(1, approxPolylineLength(r.points));
+
+    applyRoadDashes(p, r.weeks, total, strokeW);
+
+    let mid = null;
     try {
-      const mid = pathMidpoint(info.path, info.total);
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("x", mid.x);
-      label.setAttribute("y", mid.y - 8 / view.scale);
-      label.setAttribute("fill", "#e6c55a");
-      label.setAttribute("font-size", 14 / view.scale);
-      label.setAttribute("font-family", "Georgia");
-      label.setAttribute("text-anchor", "middle");
-      label.setAttribute("style", "paint-order:stroke;stroke:#1a1510;stroke-width:3px;pointer-events:none;");
-      label.textContent = r.weeks + " нед.";
-      g.appendChild(label);
-    } catch (e) { /* ignore */ }
+      const pt = p.getPointAtLength(total / 2);
+      if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) mid = { x: pt.x, y: pt.y };
+    } catch (e) { mid = null; }
+    if (!mid) mid = approxPolylineMidpoint(r.points);
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("x", mid.x);
+    label.setAttribute("y", mid.y - 8 / s);
+    label.setAttribute("fill", "#e6c55a");
+    label.setAttribute("font-size", 14 / s);
+    label.setAttribute("font-family", "Georgia");
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("style", `paint-order:stroke;stroke:#1a1510;stroke-width:${3 / s}px;pointer-events:none;`);
+    label.textContent = r.weeks + " нед.";
+    g.appendChild(label);
 
     if (isAdmin && adminMode) {
       r.points.forEach((pt, idx) => {
         const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         circ.setAttribute("cx", pt.x);
         circ.setAttribute("cy", pt.y);
-        circ.setAttribute("r", 5 / view.scale);
+        circ.setAttribute("r", 5 / s);
         circ.setAttribute("fill", "#1e1a16");
         circ.setAttribute("stroke", "#e6c55a");
-        circ.setAttribute("stroke-width", 2 / view.scale);
+        circ.setAttribute("stroke-width", 2 / s);
         circ.setAttribute("data-pt-index", idx);
         circ.setAttribute("data-road-id", r.id);
         circ.style.cursor = "move";
@@ -180,29 +239,33 @@ function drawRoads() {
       });
 
       p.style.cursor = "pointer";
-      p.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openEditRoad(r);
-      });
+      p.addEventListener("click", onExistingRoadClick(r));
     }
-
-    layer.appendChild(g);
   });
 
   if (roadDraft) drawDraftPolyline(roadDraft, layer, false);
   if (roadEditing) drawDraftPolyline(roadEditing, layer, true);
 }
 
-function pathMidpoint(d, total) {
-  const tmp = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  tmp.setAttribute("d", d);
-  const pt = tmp.getPointAtLength(total / 2);
-  return { x: pt.x, y: pt.y };
+function onExistingRoadClick(r) {
+  return (e) => {
+    if (typeof consumeSuppressedClick === "function" && consumeSuppressedClick()) {
+      e.stopPropagation();
+      return;
+    }
+    if (scalePickMode || rulerMode) return;
+    if (editMode === "place" && placingType) return;
+    if (roadDraft && roadDraft.points.length > 0) return;
+    if (roadEditing && roadEditing.id === r.id) return;
+    e.stopPropagation();
+    openEditRoad(r);
+  };
 }
 
 function drawDraftPolyline(dObj, layer, isEdit) {
+  const s = Math.max(0.05, view.scale || 1);
   const pts = dObj.points.slice();
-  if (dObj.tempPoint) pts.push(dObj.tempPoint);
+  if (dObj.tempPoint && !isEdit) pts.push(dObj.tempPoint);
   if (pts.length < 1) return;
 
   const d = pts.length >= 2 ? buildBezierPath(pts) : `M ${pts[0].x} ${pts[0].y}`;
@@ -210,31 +273,32 @@ function drawDraftPolyline(dObj, layer, isEdit) {
   p.setAttribute("d", d);
   p.setAttribute("fill", "none");
   p.setAttribute("stroke", isEdit ? "#8fc27a" : "#c9a227");
-  p.setAttribute("stroke-width", 2 / view.scale);
-  p.setAttribute("stroke-dasharray", `${6 / view.scale} ${4 / view.scale}`);
-  p.setAttribute("vector-effect", "non-scaling-stroke");
+  p.setAttribute("stroke-width", 2.5 / s);
+  p.setAttribute("stroke-dasharray", `${6 / s} ${4 / s}`);
+  p.style.pointerEvents = "none";
   layer.appendChild(p);
 
   dObj.points.forEach((pt, idx) => {
     const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circ.setAttribute("cx", pt.x);
     circ.setAttribute("cy", pt.y);
-    circ.setAttribute("r", 7 / view.scale);
-    circ.setAttribute("fill", "#c9a227");
+    circ.setAttribute("r", 7 / s);
+    circ.setAttribute("fill", isEdit ? "#8fc27a" : "#c9a227");
     circ.setAttribute("stroke", "#1a1510");
-    circ.setAttribute("stroke-width", 2 / view.scale);
+    circ.setAttribute("stroke-width", 2 / s);
     circ.setAttribute("data-pt-index", idx);
     circ.setAttribute("data-draft", "1");
     circ.style.cursor = "move";
     layer.appendChild(circ);
   });
 
-  if (dObj.tempPoint) {
+  if (dObj.tempPoint && !isEdit) {
     const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     c.setAttribute("cx", dObj.tempPoint.x);
     c.setAttribute("cy", dObj.tempPoint.y);
-    c.setAttribute("r", 4 / view.scale);
+    c.setAttribute("r", 4 / s);
     c.setAttribute("fill", "rgba(201,162,39,0.4)");
+    c.style.pointerEvents = "none";
     layer.appendChild(c);
   }
 }
@@ -248,13 +312,13 @@ function openEditRoad(r) {
     tempPoint: null
   };
   roadDraft = null;
-  setHint("Редактирование дороги: тяните точки, двойной клик / Enter — сохранить. Удалить — правый клик по дороге.");
+  setHint("Редактирование дороги: тяните точки, клик — новая точка, Backspace — удалить последнюю, двойной клик / Enter — сохранить.");
   drawRoads();
 }
 
 function finishEditRoad() {
   if (!roadEditing) return;
-  openWeeksDialog(roadEditing.points.length, roadEditing.points, roadEditing.id);
+  openWeeksDialog(roadEditing.points.length, roadEditing.points, roadEditing.id, roadEditing.weeks);
 }
 
 function deleteRoad(roadId) {
@@ -270,32 +334,48 @@ function deleteRoad(roadId) {
   drawRoads();
 }
 
+function pushUniqueRoadPoint(list, worldPt) {
+  const minDist = 3 / Math.max(0.1, view.scale || 1);
+  if (list.length > 0) {
+    const last = list[list.length - 1];
+    if (Math.hypot(worldPt.x - last.x, worldPt.y - last.y) < minDist) {
+      return false;
+    }
+  }
+  list.push({ x: worldPt.x, y: worldPt.y });
+  return true;
+}
+
 function onRoadMapClick(worldPt, isDouble) {
   if (roadEditing) {
     if (isDouble) { finishEditRoad(); return; }
-    roadEditing.points.push({ x: worldPt.x, y: worldPt.y });
+    pushUniqueRoadPoint(roadEditing.points, worldPt);
     drawRoads();
     return;
   }
   if (roadDraft) {
     if (isDouble) { finishNewRoad(); return; }
-    roadDraft.points.push({ x: worldPt.x, y: worldPt.y });
+    pushUniqueRoadPoint(roadDraft.points, worldPt);
     roadDraft.tempPoint = null;
     drawRoads();
-    setHint(`Точек: ${roadDraft.points.length}. Двойной клик / Enter — завершить.`);
+    setHint(`Точек: ${roadDraft.points.length}. Двойной клик / Enter — завершить, Backspace — шаг назад.`);
     return;
   }
+  if (isDouble) return;
   startNewRoad();
-  roadDraft.points.push({ x: worldPt.x, y: worldPt.y });
+  pushUniqueRoadPoint(roadDraft.points, worldPt);
   drawRoads();
 }
 
 function onRoadMouseMove(worldPt) {
-  if (roadDraft) { roadDraft.tempPoint = { x: worldPt.x, y: worldPt.y }; drawRoads(); }
-  else if (roadEditing) { roadEditing.tempPoint = { x: worldPt.x, y: worldPt.y }; drawRoads(); }
+  if (roadDraft) {
+    roadDraft.tempPoint = { x: worldPt.x, y: worldPt.y };
+    drawRoads();
+  }
 }
 
 function onRoadPointMouseDown(e, target) {
+  if (scalePickMode || rulerMode) return false;
   const idx = parseInt(target.getAttribute("data-pt-index"), 10);
   if (!Number.isFinite(idx)) return false;
   const isDraft = target.getAttribute("data-draft") === "1";
@@ -305,6 +385,9 @@ function onRoadPointMouseDown(e, target) {
     e.preventDefault();
     return true;
   }
+
+  // Не перехватываем клик на чужой дороге, пока рисуется новая дорога
+  if (roadDraft && roadDraft.points.length > 0) return false;
 
   const roadId = parseInt(target.getAttribute("data-road-id"), 10);
   const r = draftRoads().find(x => x.id === roadId);
@@ -325,12 +408,15 @@ function onRoadPointMouseMove(worldPt) {
 }
 
 function onRoadPointMouseUp() {
-  if (roadDragPointIndex >= 0) window.__roadSuppressClick = true;
+  if (roadDragPointIndex >= 0 && typeof suppressNextClick === "function") {
+    suppressNextClick();
+  }
   roadDragPointIndex = -1;
 }
 
 function onRoadKeyDown(e) {
   if (e.key === "Enter") {
+    e.preventDefault();
     if (roadDraft) finishNewRoad();
     else if (roadEditing) finishEditRoad();
   } else if (e.key === "Escape") {
@@ -338,10 +424,20 @@ function onRoadKeyDown(e) {
     else if (roadEditing) { roadEditing = null; setEditMode("view"); drawRoads(); }
   } else if (e.key === "Backspace") {
     if (roadDraft && roadDraft.points.length) {
+      e.preventDefault();
       roadDraft.points.pop();
       drawRoads();
+      setHint(`Точек: ${roadDraft.points.length}. Двойной клик / Enter — завершить.`);
+    } else if (roadEditing && roadEditing.points.length > 2) {
+      e.preventDefault();
+      roadEditing.points.pop();
+      drawRoads();
+    } else if (roadEditing && roadEditing.points.length <= 2) {
+      e.preventDefault();
+      setHint("В дороге должно остаться минимум 2 точки.");
     }
   } else if (e.key === "Delete" && roadEditing) {
+    e.preventDefault();
     deleteRoad(roadEditing.id);
   }
 }
