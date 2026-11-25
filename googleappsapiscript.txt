@@ -31,7 +31,8 @@ function parseNum(v) {
 function normalizeHeaderKey(h) {
   const s = String(h === null || h === undefined ? "" : h).trim().toLowerCase();
   const aliases = {
-    "id": "id", "ид": "id", "№": "id", "num": "id",
+    "id": "id", "ид": "id", "№": "id", "#": "id", "num": "id", "number": "id",
+    "номер": "id", "код": "id", "ключ": "id", "id маркера": "id", "marker_id": "id", "markerid": "id", "ident": "id",
     "type": "type", "тип": "type",
     "x": "x", "х": "x", // латиница x и кириллица х
     "y": "y", "у": "y", // латиница y и кириллица у
@@ -53,6 +54,7 @@ function ensureSheetStructure(name, expectedHeaders, allowWrite) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
+    if (allowWrite === false) return { sheet: null, headers: expectedHeaders.slice() };
     sheet = ss.insertSheet(name);
     sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
     return { sheet, headers: expectedHeaders.slice() };
@@ -64,7 +66,7 @@ function ensureSheetStructure(name, expectedHeaders, allowWrite) {
 
   if (allEmpty && data.length <= 1) {
     if (allowWrite !== false) {
-      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+      try { sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]); } catch (e) { /* ignore */ }
     }
     return { sheet, headers: expectedHeaders.slice() };
   }
@@ -78,9 +80,11 @@ function ensureSheetStructure(name, expectedHeaders, allowWrite) {
   // Если первая строка содержит данные вместо заголовков — аккуратно вставляем строку заголовков сверху
   if (matchedCount === 0 && !allEmpty) {
     if (allowWrite !== false) {
-      sheet.insertRowBefore(1);
-      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
-      return { sheet, headers: expectedHeaders.slice() };
+      try {
+        sheet.insertRowBefore(1);
+        sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders]);
+        return { sheet, headers: expectedHeaders.slice() };
+      } catch (e) { /* ignore */ }
     }
   }
 
@@ -92,9 +96,17 @@ function ensureSheetStructure(name, expectedHeaders, allowWrite) {
       headerChanged = true;
     }
   }
+
+  // Если первая колонка не распознана как служебная, а вторая совпадает со вторым ожидаемым заголовком ("type" или "weeks"),
+  // значит первая колонка — это и есть колонка "id" с произвольным названием или пустой шапкой
+  if (expectedHeaders[0] === "id" && headers.indexOf("id") < 0 && headers.length >= 2 &&
+      !expectedSet[headers[0]] && headers[1] === expectedHeaders[1]) {
+    headers[0] = "id";
+    headerChanged = true;
+  }
+
   expectedHeaders.forEach(eh => {
     if (headers.indexOf(eh) < 0) {
-      // Ищем пустую ячейку или добавляем в конец
       const emptyIdx = headers.indexOf("");
       if (emptyIdx >= 0) headers[emptyIdx] = eh;
       else headers.push(eh);
@@ -103,7 +115,7 @@ function ensureSheetStructure(name, expectedHeaders, allowWrite) {
   });
 
   if (headerChanged && allowWrite !== false) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    try { sheet.getRange(1, 1, 1, headers.length).setValues([headers]); } catch (e) { /* ignore */ }
   }
 
   return { sheet, headers };
@@ -168,10 +180,17 @@ function writeMetaJson(metaKey, obj) {
 }
 
 function readMarkersFromSheet() {
-  const lock = LockService.getScriptLock();
-  const canWrite = lock.tryLock(2000);
+  let lock = null;
+  let canWrite = false;
+  try {
+    lock = LockService.getScriptLock();
+    canWrite = Boolean(lock && lock.tryLock(2000));
+  } catch (e) {
+    canWrite = false;
+  }
   try {
     const { sheet, headers } = ensureSheetStructure(SHEET_MARKERS, HEADERS_MARKERS, canWrite);
+    if (!sheet) return [];
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return [];
 
@@ -218,7 +237,7 @@ function readMarkersFromSheet() {
       });
     }
 
-    // Проставляем недостающие или дублирующиеся id и сразу сохраняем их в таблицу
+    // Проставляем недостающие или дублирующиеся id и при возможности сразу записываем их в таблицу
     rowsMeta.forEach(item => {
       if (item.id === null) {
         maxId += 1;
@@ -226,7 +245,7 @@ function readMarkersFromSheet() {
         item.id = maxId;
         usedIds[item.id] = true;
         if (canWrite && idCol >= 0) {
-          sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id);
+          try { sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id); } catch (e) { /* ignore */ }
         }
       }
     });
@@ -241,17 +260,24 @@ function readMarkersFromSheet() {
       color: m.color
     }));
   } finally {
-    if (canWrite) {
+    if (canWrite && lock) {
       try { lock.releaseLock(); } catch (e) { /* ignore */ }
     }
   }
 }
 
 function readRoadsFromSheet() {
-  const lock = LockService.getScriptLock();
-  const canWrite = lock.tryLock(2000);
+  let lock = null;
+  let canWrite = false;
+  try {
+    lock = LockService.getScriptLock();
+    canWrite = Boolean(lock && lock.tryLock(2000));
+  } catch (e) {
+    canWrite = false;
+  }
   try {
     const { sheet, headers } = ensureSheetStructure(SHEET_ROADS, HEADERS_ROADS, canWrite);
+    if (!sheet) return [];
     const data = sheet.getDataRange().getValues();
     if (data.length <= 1) return [];
 
@@ -300,7 +326,7 @@ function readRoadsFromSheet() {
         item.id = maxId;
         usedIds[item.id] = true;
         if (canWrite && idCol >= 0) {
-          sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id);
+          try { sheet.getRange(item.sheetRow, idCol + 1).setValue(item.id); } catch (e) { /* ignore */ }
         }
       }
     });

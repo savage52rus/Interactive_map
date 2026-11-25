@@ -2,6 +2,7 @@
 
 let jsonpSeq = 0;
 let serverApiVersion = 0;
+let serverApiStatus = "pending"; // "pending" | "v2" | "legacy" | "offline"
 let serverNeedsSheetCleanup = false;
 
 function jsonpRequest(url, timeoutMs = 20000) {
@@ -16,7 +17,7 @@ function jsonpRequest(url, timeoutMs = 20000) {
     window[callbackName] = (data) => { clearTimeout(timeout); cleanup(); resolve(data); };
     script.onerror = () => { clearTimeout(timeout); cleanup(); reject(new Error("Ошибка загрузки скрипта")); };
     const separator = url.includes("?") ? "&" : "?";
-    script.src = url + separator + "callback=" + callbackName;
+    script.src = url + separator + "callback=" + callbackName + "&_t=" + Date.now();
     document.body.appendChild(script);
   });
 }
@@ -28,6 +29,8 @@ async function apiFetchAll() {
     if (!data || data.error) throw new Error((data && data.error) || "Неверный ответ");
 
     serverApiVersion = Number(data.apiVersion) || 0;
+    serverApiStatus = serverApiVersion >= 2 ? "v2" : "legacy";
+    if (typeof updateGasVersionWarning === "function") updateGasVersionWarning();
 
     const rawMarkers = Array.isArray(data) ? data : (data.markers || []);
     const rawRoads = Array.isArray(data) ? [] : (data.roads || []);
@@ -48,6 +51,8 @@ async function apiFetchAll() {
     };
   } catch (err) {
     console.error("apiFetchAll:", err);
+    serverApiStatus = "offline";
+    if (typeof updateGasVersionWarning === "function") updateGasVersionWarning();
     return null;
   }
 }
@@ -68,6 +73,57 @@ function cleanMarkerForApi(marker) {
   };
 }
 
+function withLegacyMarkerHeaderAliases(clean) {
+  return {
+    ...clean,
+    ID: clean.id,
+    Id: clean.id,
+    iD: clean.id,
+    "id ": clean.id,
+    " id": clean.id,
+    "ID ": clean.id,
+    " ID": clean.id,
+    "ид": clean.id,
+    "ИД": clean.id,
+    "Ид": clean.id,
+    "№": clean.id,
+    "#": clean.id,
+    num: clean.id,
+    Num: clean.id,
+    NUM: clean.id,
+    "номер": clean.id,
+    "Номер": clean.id,
+    "код": clean.id,
+    "Код": clean.id,
+    "id маркера": clean.id,
+    "ID маркера": clean.id,
+    "": clean.id,
+    Type: clean.type,
+    TYPE: clean.type,
+    "тип": clean.type,
+    "Тип": clean.type,
+    X: clean.x,
+    "х": clean.x,
+    "Х": clean.x,
+    Y: clean.y,
+    "у": clean.y,
+    "У": clean.y,
+    Name: clean.name,
+    NAME: clean.name,
+    "название": clean.name,
+    "Название": clean.name,
+    Desc: clean.desc,
+    DESC: clean.desc,
+    Description: clean.desc,
+    "описание": clean.desc,
+    "Описание": clean.desc,
+    Color: clean.color,
+    COLOR: clean.color,
+    "цвет": clean.color,
+    "Цвет": clean.color
+  };
+}
+
 function cleanRoadForApi(road) {
   const rawId = parseInt(road && road.id, 10);
   const id = (Number.isFinite(rawId) && rawId > 0) ? rawId : Date.now();
@@ -82,16 +138,39 @@ function cleanRoadForApi(road) {
   return { id, weeks, points };
 }
 
+function withLegacyRoadHeaderAliases(clean) {
+  return {
+    ...clean,
+    ID: clean.id,
+    Id: clean.id,
+    iD: clean.id,
+    "id ": clean.id,
+    " id": clean.id,
+    "ID ": clean.id,
+    "ид": clean.id,
+    "ИД": clean.id,
+    "№": clean.id,
+    "#": clean.id,
+    "": clean.id,
+    Weeks: clean.weeks,
+    WEEKS: clean.weeks,
+    "недели": clean.weeks,
+    "Недели": clean.weeks,
+    Points: clean.points,
+    POINTS: clean.points
+  };
+}
+
 /* ---------- Отправка данных ---------- */
 async function apiUpsertMarker(marker) {
   const clean = cleanMarkerForApi(marker);
-  // Передаём поля и на верхнем уровне, и внутри marker/item для 100% совместимости с любой версией GAS
+  const markerPayload = serverApiVersion >= 2 ? clean : withLegacyMarkerHeaderAliases(clean);
   const res = await apiPost({
     kind: "marker",
     action: "upsert",
     ...clean,
-    marker: clean,
-    item: clean
+    marker: markerPayload,
+    item: markerPayload
   });
   if (res && res.status === "ok") {
     const returnedId = parseInt(res.id, 10);
@@ -110,12 +189,13 @@ async function apiDeleteMarker(id) {
 
 async function apiUpsertRoad(road) {
   const clean = cleanRoadForApi(road);
+  const roadPayload = serverApiVersion >= 2 ? clean : withLegacyRoadHeaderAliases(clean);
   const res = await apiPost({
     kind: "road",
     action: "upsert",
     ...clean,
-    road: clean,
-    item: clean
+    road: roadPayload,
+    item: roadPayload
   });
   if (res && res.status === "ok") {
     const returnedId = parseInt(res.id, 10);
@@ -140,7 +220,7 @@ async function apiSyncBatch(diff) {
  * Синхронизация изменений:
  * - Пакетный запрос (kind: "sync") отправляется ТОЛЬКО если сервер подтвердил apiVersion >= 2 в doGet.
  *   Это исключает запись пустых строк с координатами 0;0 на старых версиях развёрнутого скрипта GAS!
- * - На старых версиях GAS (apiVersion < 2) используются прямые поштучные запросы с плоскими + вложенными полями.
+ * - На старых версиях GAS (apiVersion < 2) используются поштучные запросы со всеми вариантами названия колонки ID.
  */
 async function apiSyncChanges(diff) {
   const {
