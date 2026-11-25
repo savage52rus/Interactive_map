@@ -254,6 +254,17 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
   margin: 4px 6px;
 }
 
+.gas-warn {
+  background: rgba(140, 62, 22, 0.28);
+  border: 1px solid #b86a35;
+  border-radius: 6px;
+  color: #f3cfa4;
+  font-size: 11px;
+  line-height: 1.38;
+  padding: 6px 8px;
+}
+.gas-warn b { color: #ffd996; }
+
 @media (max-width: 640px) {
   #topRight { top: 10px; right: 10px; gap: 6px; }
   .ui-btn { width: 40px; height: 40px; font-size: 18px; }

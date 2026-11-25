@@ -118,3 +118,14 @@ function refreshTypeIconUI() {
     $("mpIcon").innerHTML = svgSprite(activePopupMarker.type, activePopupMarker.color);
   }
 }
+
+function updateGasVersionWarning() {
+  const el = $("gasVersionWarn");
+  if (!el) return;
+  if (typeof serverApiStatus !== "undefined" && serverApiStatus === "legacy") {
+    el.innerHTML = "⚠ В Google Таблице активна старая версия Apps Script: строки без <b>id</b> скрываются сервером Google. Обновите код из <b>googleappsapiscript.txt</b> через «Развернуть → Управление развертываниями → ✏ Изменить → Новая версия».";
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
+}
