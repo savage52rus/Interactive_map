@@ -39,7 +39,8 @@ function isMarkerEqual(a, b) {
     roundCoord(Number(a.y)) === roundCoord(Number(b.y)) &&
     String(a.name || "") === String(b.name || "") &&
     String(a.desc || "") === String(b.desc || "") &&
-    String(a.color || "") === String(b.color || "");
+    String(a.color || "") === String(b.color || "") &&
+    String(a.icon || "") === String(b.icon || "");
 }
 
 function isRoadEqual(a, b) {

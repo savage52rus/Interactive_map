@@ -66,6 +66,7 @@ function normalizeMarkersWithMeta(rawList) {
     }
     const type = (typeof TYPES !== "undefined" && TYPES[m.type]) ? m.type : "poi";
     const color = /^#[0-9a-fA-F]{6}$/.test(String(m.color || "")) ? String(m.color) : "#c9a227";
+    const icon = (typeof sanitizeMarkerIcon === "function") ? sanitizeMarkerIcon(m.icon) : "";
     prepared.push({
       id,
       type,
@@ -73,7 +74,8 @@ function normalizeMarkersWithMeta(rawList) {
       y: roundCoord(y),
       name: String(m.name ?? ""),
       desc: String(m.desc ?? ""),
-      color
+      color,
+      icon
     });
   }
 

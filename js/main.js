@@ -144,6 +144,15 @@ function init() {
   initialSyncPromise = apiFetchAll().then(remote => {
     initialSyncPromise = null;
     if (remote) {
+      if (remote.apiVersion < 3 && Array.isArray(state.markers) && state.markers.length > 0) {
+        // Если серверный скрипт ещё не возвращает колонку icon, сохраняем локально выбранные иконки по id
+        const localIconById = new Map(state.markers.filter(m => m.icon).map(m => [m.id, m.icon]));
+        remote.markers.forEach(rm => {
+          if (!rm.icon && localIconById.has(rm.id)) {
+            rm.icon = localIconById.get(rm.id);
+          }
+        });
+      }
       state.markers = remote.markers;
       state.roads = remote.roads;
       if (remote.scale) state.scale = remote.scale;

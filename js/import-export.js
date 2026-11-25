@@ -106,7 +106,8 @@ function validateImport(data) {
       id, type, x: roundCoord(x), y: roundCoord(y),
       name: typeof m.name === "string" && m.name.trim() ? m.name.trim().slice(0, 200) : TYPES[type].label,
       desc: typeof m.desc === "string" ? m.desc.slice(0, 5000) : "",
-      color: /^#[0-9a-fA-F]{6}$/.test(m.color || "") ? m.color : "#c9a227"
+      color: /^#[0-9a-fA-F]{6}$/.test(m.color || "") ? m.color : "#c9a227",
+      icon: sanitizeMarkerIcon(m.icon)
     });
   }
 
@@ -163,8 +164,9 @@ function applyImport() {
       if (existing) {
         existing.type = m.type; existing.x = m.x; existing.y = m.y;
         existing.name = m.name; existing.desc = m.desc; existing.color = m.color;
+        existing.icon = sanitizeMarkerIcon(m.icon);
       } else {
-        const nm = { ...m, id };
+        const nm = { ...m, id, icon: sanitizeMarkerIcon(m.icon) };
         draft.markers.push(nm); byId.set(id, nm);
       }
     });

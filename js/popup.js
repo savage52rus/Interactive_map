@@ -19,7 +19,7 @@ function updatePopupPosition() {
 
 function showPopup(m) {
   activePopupMarker = m;
-  $("mpIcon").innerHTML = svgSprite(m.type, m.color);
+  $("mpIcon").innerHTML = svgSprite(m.type, m.color, m.icon);
   $("mpTitle").textContent = m.name;
   $("mpType").textContent = TYPES[m.type] ? TYPES[m.type].label : m.type;
   $("mpDesc").textContent = m.desc || "—";

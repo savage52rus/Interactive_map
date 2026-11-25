@@ -69,7 +69,8 @@ function cleanMarkerForApi(marker) {
     y: Number.isFinite(y) ? roundCoord(y) : 0,
     name: String((marker && marker.name) ?? ""),
     desc: String((marker && marker.desc) ?? ""),
-    color: /^#[0-9a-fA-F]{6}$/.test(String((marker && marker.color) || "")) ? String(marker.color) : "#c9a227"
+    color: /^#[0-9a-fA-F]{6}$/.test(String((marker && marker.color) || "")) ? String(marker.color) : "#c9a227",
+    icon: (typeof sanitizeMarkerIcon === "function") ? sanitizeMarkerIcon(marker && marker.icon) : ""
   };
 }
 
@@ -120,7 +121,11 @@ function withLegacyMarkerHeaderAliases(clean) {
     Color: clean.color,
     COLOR: clean.color,
     "цвет": clean.color,
-    "Цвет": clean.color
+    "Цвет": clean.color,
+    Icon: clean.icon,
+    ICON: clean.icon,
+    "иконка": clean.icon,
+    "Иконка": clean.icon
   };
 }
 
