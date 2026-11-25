@@ -1,8 +1,17 @@
+const DEFAULT_TYPE_ICONS = {
+  city: 0,
+  village: 0,
+  fortress: 0,
+  nature: 0,
+  poi: 0
+};
+
 // Основное (сохранённое) состояние — доступно всем, меняется только через applyDraft
 const state = {
   markers: [],
   roads: [],                                      // ← дороги (кривые Безье)
   scale: { walk: CONFIG.DEFAULT_WALK, cart: CONFIG.DEFAULT_CART },
+  typeIcons: { ...DEFAULT_TYPE_ICONS },           // ← выбранная иконка (0..4) под каждый тип маркера
   nextId: 1,
   nextRoadId: 1                                   // ← счётчик id дорог
 };
